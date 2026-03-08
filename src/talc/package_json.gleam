@@ -18,14 +18,20 @@ pub type GenerationError {
 
 /// Generates a package.json JSON string from Gleam and talc configs.
 ///
-/// ## Examples
-///
-/// ```gleam
-/// let json_string = generate(gleam_config, talc_config)
-/// ```
+/// When `module_names` is provided, sub-path exports are generated
+/// for each public module.
 pub fn generate(
   gleam_config: GleamConfig,
   talc_config: TalcConfig,
+) -> Result(String, GenerationError) {
+  generate_with_modules(gleam_config, talc_config, [])
+}
+
+/// Generates package.json with sub-path exports for the given modules.
+pub fn generate_with_modules(
+  gleam_config: GleamConfig,
+  talc_config: TalcConfig,
+  module_names: List(String),
 ) -> Result(String, GenerationError) {
   let npm_name = build_npm_name(gleam_config.name, talc_config)
 
@@ -45,7 +51,7 @@ pub fn generate(
     [] -> []
   }
 
-  let esm_fields = build_esm_fields(gleam_config.name)
+  let esm_fields = build_esm_fields(gleam_config.name, module_names)
   let repository_fields = build_repository_fields(gleam_config)
   let extra_fields = build_extra_fields(talc_config)
   let peer_dep_fields = build_peer_dep_fields(talc_config)
@@ -72,21 +78,43 @@ fn build_npm_name(name: String, config: TalcConfig) -> String {
   }
 }
 
-/// Builds ESM module entry point fields.
-fn build_esm_fields(package_name: String) -> List(#(String, json.Json)) {
+/// Builds ESM module entry point fields with sub-path exports.
+fn build_esm_fields(
+  package_name: String,
+  module_names: List(String),
+) -> List(#(String, json.Json)) {
   let main_path = "./dist/" <> package_name <> ".mjs"
   let types_path = "./dist/" <> package_name <> ".d.ts"
 
-  let exports =
+  let root_export = #(
+    ".",
     json.object([
+      #("import", json.string(main_path)),
+      #("types", json.string(types_path)),
+    ]),
+  )
+
+  // Build sub-path exports for non-root public modules
+  let sub_exports =
+    module_names
+    |> list.filter(fn(m) { m != package_name })
+    |> list.sort(string.compare)
+    |> list.map(fn(module_name) {
+      let sub_path =
+        "./"
+        <> string.replace(strip_prefix(module_name, package_name), "/", "/")
+      let mjs_path = "./dist/" <> module_name <> ".mjs"
+      let dts_path = "./dist/" <> module_name <> ".d.ts"
       #(
-        ".",
+        sub_path,
         json.object([
-          #("import", json.string(main_path)),
-          #("types", json.string(types_path)),
+          #("import", json.string(mjs_path)),
+          #("types", json.string(dts_path)),
         ]),
-      ),
-    ])
+      )
+    })
+
+  let exports = json.object([root_export, ..sub_exports])
 
   [
     #("main", json.string(main_path)),
@@ -94,6 +122,15 @@ fn build_esm_fields(package_name: String) -> List(#(String, json.Json)) {
     #("types", json.string(types_path)),
     #("exports", exports),
   ]
+}
+
+/// Strips the package name prefix from a module name.
+/// "birch/handler" with prefix "birch" → "handler"
+fn strip_prefix(module_name: String, prefix: String) -> String {
+  case string.starts_with(module_name, prefix <> "/") {
+    True -> string.drop_start(module_name, string.length(prefix) + 1)
+    False -> module_name
+  }
 }
 
 /// Builds repository field from gleam.toml repository config.
