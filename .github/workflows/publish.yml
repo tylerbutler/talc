@@ -18,6 +18,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Publish to Hex.pm
-        run: gleam publish --yes
+        # Pipe confirmation for pre-1.0 semver warning
+        run: echo "I am not using semantic versioning" | gleam publish --yes
         env:
           HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}

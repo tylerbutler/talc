@@ -5,8 +5,10 @@ licences = ["MIT"]
 repository = { type = "github", user = "tylerbutler", repo = "talc" }
 gleam = ">= 1.7.0"
 
-# Uncomment to mark internal modules (not exported in public API):
-# internal_modules = ["talc/internal", "talc/internal/*"]
+internal_modules = [
+  "talc/internal",
+  "talc/internal/*",
+]
 
 [dependencies]
 gleam_stdlib = ">= 0.48.0 and < 2.0.0"
