@@ -1,7 +1,5 @@
 # talc
 
-A Gleam CLI tool.
-=======
 [![Package Version](https://img.shields.io/hexpm/v/talc)](https://hex.pm/packages/talc)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/talc/)
 

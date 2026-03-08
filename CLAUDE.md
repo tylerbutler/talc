@@ -3,7 +3,8 @@
 ## Project Overview
 
 An npm packaging tool for Gleam libraries, targeting the Erlang (BEAM) runtime. Reads a compiled
-Gleam project and produces a publish-ready npm package directory with a generated `package.json`.
+Gleam project and produces a publish-ready npm package directory with a generated `package.json`,
+TypeScript `.d.ts` declarations, and workflow commands (`pack`, `publish`).
 
 ## Build Commands
 
@@ -36,17 +37,26 @@ just clean        # Remove build artifacts
 
 ```
 src/
-├── talc.gleam               # CLI entry point (glint commands)
+├── talc.gleam               # CLI entry point (glint commands: generate, check, pack, publish)
+├── talc_interface_ffi.erl   # Erlang FFI: gleam export package-interface
+├── talc_npm_ffi.erl         # Erlang FFI: npm pack/publish
 └── talc/
     ├── gleam_toml.gleam     # gleam.toml parser → GleamConfig
     ├── talc_config.gleam    # talc.toml parser → TalcConfig
-    ├── package_json.gleam   # package.json generation logic
-    └── output.gleam         # File I/O: write output dir, copy files
+    ├── package_json.gleam   # package.json generation with sub-path exports
+    ├── output.gleam         # File I/O: write output dir, copy .mjs, write .d.ts
+    ├── interface.gleam      # Package interface loader (gleam CLI → gleam_package_interface)
+    ├── typescript.gleam     # Gleam Type → TypeScript type string mapper
+    ├── dts.gleam            # .d.ts file emitter per module
+    └── npm.gleam            # npm CLI wrapper (pack, publish, flag building)
 test/
 ├── talc_test.gleam          # Test runner entry point
 ├── gleam_toml_test.gleam    # gleam.toml parsing tests
 ├── talc_config_test.gleam   # talc.toml parsing tests
 ├── package_json_test.gleam  # JSON generation tests
+├── typescript_test.gleam    # Type mapping tests
+├── dts_test.gleam           # .d.ts emission tests
+├── npm_test.gleam           # npm flag building tests
 └── test_helpers.gleam       # Shared test utilities
 ```
 
@@ -88,6 +98,7 @@ case result {
 - `gleam_json` - JSON serialization
 - `glint` - CLI framework
 - `argv` - Cross-platform argument fetching
+- `gleam_package_interface` - Decoder for Gleam compiler's package interface JSON
 
 ### Development
 - `gleeunit` - Testing framework

@@ -8,10 +8,12 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import glint
 import talc/dts
 import talc/gleam_toml
 import talc/interface
+import talc/npm
 import talc/output
 import talc/package_json
 import talc/talc_config
@@ -25,6 +27,8 @@ Generates package.json, .d.ts declarations, and assembles npm-ready output from 
   )
   |> glint.add(at: ["generate"], do: generate_command())
   |> glint.add(at: ["check"], do: check_command())
+  |> glint.add(at: ["pack"], do: pack_command())
+  |> glint.add(at: ["publish"], do: publish_command())
   |> glint.run(argv.load().arguments)
 }
 
@@ -33,6 +37,26 @@ Generates package.json, .d.ts declarations, and assembles npm-ready output from 
 fn output_dir_flag() {
   glint.string_flag("output-dir")
   |> glint.flag_help("Output directory (default: from talc.toml or npm_dist)")
+}
+
+fn dry_run_flag() {
+  glint.bool_flag("dry-run")
+  |> glint.flag_help("Perform a dry run without actually publishing")
+}
+
+fn tag_flag() {
+  glint.string_flag("tag")
+  |> glint.flag_help("npm dist-tag to publish under (default: latest)")
+}
+
+fn access_flag() {
+  glint.string_flag("access")
+  |> glint.flag_help("Package access level: public or restricted")
+}
+
+fn provenance_flag() {
+  glint.bool_flag("provenance")
+  |> glint.flag_help("Generate provenance attestation (CI only)")
 }
 
 // -- Generate command --
@@ -66,6 +90,68 @@ fn check_command() -> glint.Command(Nil) {
 
   case run_check() {
     Ok(report) -> io.println(report)
+    Error(msg) -> {
+      io.println_error("✗ " <> msg)
+      halt(1)
+    }
+  }
+}
+
+// -- Pack command --
+
+fn pack_command() -> glint.Command(Nil) {
+  use output_dir_getter <- glint.flag(output_dir_flag())
+  use _named, _unnamed, flags <- glint.command()
+
+  let output_dir_override = case output_dir_getter(flags) {
+    Ok(dir) -> Some(dir)
+    Error(_) -> None
+  }
+
+  case run_pack(output_dir_override) {
+    Ok(#(tarball, warnings)) -> {
+      io.println("✓ Packed: " <> tarball)
+      print_warnings(warnings)
+    }
+    Error(msg) -> {
+      io.println_error("✗ " <> msg)
+      halt(1)
+    }
+  }
+}
+
+// -- Publish command --
+
+fn publish_command() -> glint.Command(Nil) {
+  use output_dir_getter <- glint.flag(output_dir_flag())
+  use dry_run_getter <- glint.flag(dry_run_flag())
+  use tag_getter <- glint.flag(tag_flag())
+  use access_getter <- glint.flag(access_flag())
+  use provenance_getter <- glint.flag(provenance_flag())
+  use _named, _unnamed, flags <- glint.command()
+
+  let output_dir_override = case output_dir_getter(flags) {
+    Ok(dir) -> Some(dir)
+    Error(_) -> None
+  }
+
+  let publish_flags =
+    npm.build_publish_flags(
+      result.unwrap(dry_run_getter(flags), False),
+      tag_getter(flags),
+      access_getter(flags),
+      result.unwrap(provenance_getter(flags), False),
+    )
+
+  case run_publish(output_dir_override, publish_flags) {
+    Ok(#(npm_output, warnings)) -> {
+      io.println("✓ Published!")
+      case npm_output {
+        "" -> Nil
+        out -> io.println(out)
+      }
+      print_warnings(warnings)
+    }
     Error(msg) -> {
       io.println_error("✗ " <> msg)
       halt(1)
@@ -140,6 +226,45 @@ fn run_generate(
   )
 
   Ok(#(written, all_warnings))
+}
+
+fn run_pack(
+  output_dir_override: Option(String),
+) -> Result(#(String, List(String)), String) {
+  use #(_files, warnings) <- try_ok(run_generate(output_dir_override))
+
+  let output_dir = resolve_output_dir(output_dir_override)
+
+  use tarball <- try_ok(npm.pack(output_dir) |> map_error(npm.error_to_string))
+
+  Ok(#(tarball, warnings))
+}
+
+fn run_publish(
+  output_dir_override: Option(String),
+  flags: List(String),
+) -> Result(#(String, List(String)), String) {
+  use #(_files, warnings) <- try_ok(run_generate(output_dir_override))
+
+  let output_dir = resolve_output_dir(output_dir_override)
+
+  use npm_output <- try_ok(
+    npm.publish(output_dir, flags) |> map_error(npm.error_to_string),
+  )
+
+  Ok(#(npm_output, warnings))
+}
+
+/// Resolves the effective output directory from optional override and config.
+fn resolve_output_dir(override: Option(String)) -> String {
+  case override {
+    Some(dir) -> dir
+    None ->
+      case talc_config.read(from: ".") {
+        Ok(talc) -> talc.package.output_dir
+        Error(_) -> "npm_dist"
+      }
+  }
 }
 
 fn run_check() -> Result(String, String) {
