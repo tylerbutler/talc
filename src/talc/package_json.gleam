@@ -1,0 +1,201 @@
+/// Generation of `package.json` content from Gleam project metadata.
+///
+/// This module takes parsed `gleam.toml` and optional `talc.toml` configuration
+/// and produces a well-formed `package.json` string suitable for npm publishing.
+import gleam/int
+import gleam/json
+import gleam/list
+import gleam/option.{None, Some}
+import gleam/string
+import talc/gleam_toml.{type GleamConfig}
+import talc/talc_config.{type TalcConfig}
+
+/// Errors that can occur during package.json generation.
+pub type GenerationError {
+  MissingName
+  MissingVersion
+}
+
+/// Generates a package.json JSON string from Gleam and talc configs.
+///
+/// ## Examples
+///
+/// ```gleam
+/// let json_string = generate(gleam_config, talc_config)
+/// ```
+pub fn generate(
+  gleam_config: GleamConfig,
+  talc_config: TalcConfig,
+) -> Result(String, GenerationError) {
+  let npm_name = build_npm_name(gleam_config.name, talc_config)
+
+  let base_fields = [
+    #("name", json.string(npm_name)),
+    #("version", json.string(gleam_config.version)),
+    #("type", json.string("module")),
+  ]
+
+  let description_fields = case gleam_config.description {
+    "" -> []
+    desc -> [#("description", json.string(desc))]
+  }
+
+  let license_fields = case gleam_config.licences {
+    [first, ..] -> [#("license", json.string(first))]
+    [] -> []
+  }
+
+  let esm_fields = build_esm_fields(gleam_config.name)
+  let repository_fields = build_repository_fields(gleam_config)
+  let extra_fields = build_extra_fields(talc_config)
+  let peer_dep_fields = build_peer_dep_fields(talc_config)
+
+  let all_fields =
+    list.flatten([
+      base_fields,
+      description_fields,
+      license_fields,
+      esm_fields,
+      repository_fields,
+      extra_fields,
+      peer_dep_fields,
+    ])
+
+  Ok(json.to_string(json.object(all_fields)))
+}
+
+/// Builds the npm package name, optionally with a scope prefix.
+fn build_npm_name(name: String, config: TalcConfig) -> String {
+  case config.package.scope {
+    Some(scope) -> scope <> "/" <> name
+    None -> name
+  }
+}
+
+/// Builds ESM module entry point fields.
+fn build_esm_fields(package_name: String) -> List(#(String, json.Json)) {
+  let main_path = "./dist/" <> package_name <> ".mjs"
+  let types_path = "./dist/" <> package_name <> ".d.ts"
+
+  let exports =
+    json.object([
+      #(
+        ".",
+        json.object([
+          #("import", json.string(main_path)),
+          #("types", json.string(types_path)),
+        ]),
+      ),
+    ])
+
+  [
+    #("main", json.string(main_path)),
+    #("module", json.string(main_path)),
+    #("types", json.string(types_path)),
+    #("exports", exports),
+  ]
+}
+
+/// Builds repository field from gleam.toml repository config.
+fn build_repository_fields(config: GleamConfig) -> List(#(String, json.Json)) {
+  case config.repository {
+    Ok(repo) -> {
+      let url = repository_url(repo)
+      [
+        #(
+          "repository",
+          json.object([
+            #("type", json.string("git")),
+            #("url", json.string(url)),
+          ]),
+        ),
+      ]
+    }
+    Error(_) -> []
+  }
+}
+
+/// Converts a Repository to a git URL.
+fn repository_url(repo: gleam_toml.Repository) -> String {
+  case repo.type_ {
+    "github" -> "https://github.com/" <> repo.user <> "/" <> repo.repo
+    "gitlab" -> "https://gitlab.com/" <> repo.user <> "/" <> repo.repo
+    "bitbucket" -> "https://bitbucket.org/" <> repo.user <> "/" <> repo.repo
+    _ -> repo.user <> "/" <> repo.repo
+  }
+}
+
+/// Builds extra package.json fields from talc.toml overrides.
+fn build_extra_fields(config: TalcConfig) -> List(#(String, json.Json)) {
+  config.extra_fields
+  |> list.map(fn(pair) { #(pair.0, json.string(pair.1)) })
+}
+
+/// Builds peerDependencies field from talc.toml.
+fn build_peer_dep_fields(config: TalcConfig) -> List(#(String, json.Json)) {
+  case config.peer_dependencies {
+    [] -> []
+    deps -> {
+      let dep_object =
+        deps
+        |> list.map(fn(pair) { #(pair.0, json.string(pair.1)) })
+        |> json.object()
+      [#("peerDependencies", dep_object)]
+    }
+  }
+}
+
+/// Validates that the generated config has all required fields.
+pub fn validate(gleam_config: GleamConfig) -> Result(Nil, List(String)) {
+  let errors =
+    []
+    |> check_non_empty(gleam_config.name, "name")
+    |> check_non_empty(gleam_config.version, "version")
+
+  case errors {
+    [] -> Ok(Nil)
+    _ -> Error(errors)
+  }
+}
+
+fn check_non_empty(
+  errors: List(String),
+  value: String,
+  field: String,
+) -> List(String) {
+  case value {
+    "" -> list.append(errors, ["Missing required field: " <> field])
+    _ -> errors
+  }
+}
+
+/// Generates a pretty-printed validation report.
+pub fn check_report(
+  gleam_config: GleamConfig,
+  talc_config: TalcConfig,
+) -> String {
+  let validation = validate(gleam_config)
+  let generation = generate(gleam_config, talc_config)
+
+  case validation, generation {
+    Ok(_), Ok(json_str) -> {
+      let npm_name = build_npm_name(gleam_config.name, talc_config)
+      "✓ Package: "
+      <> npm_name
+      <> "\n"
+      <> "✓ Version: "
+      <> gleam_config.version
+      <> "\n"
+      <> "✓ package.json is valid ("
+      <> int.to_string(string.byte_size(json_str))
+      <> " bytes)\n"
+      <> "✓ Output directory: "
+      <> talc_config.package.output_dir
+    }
+    Error(errors), _ -> {
+      "Validation failed:\n"
+      <> string.join(list.map(errors, fn(e) { "  ✗ " <> e }), "\n")
+    }
+    _, Error(_) -> "Failed to generate package.json"
+  }
+}

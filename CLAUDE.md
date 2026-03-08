@@ -2,7 +2,8 @@
 
 ## Project Overview
 
-A Gleam CLI tool targeting the Erlang (BEAM) runtime.
+An npm packaging tool for Gleam libraries, targeting the Erlang (BEAM) runtime. Reads a compiled
+Gleam project and produces a publish-ready npm package directory with a generated `package.json`.
 
 ## Build Commands
 
@@ -35,12 +36,18 @@ just clean        # Remove build artifacts
 
 ```
 src/
-├── talc.gleam           # Main entry point
-└── talc/                # Submodules
-    └── internal/        # Private implementation (mark in gleam.toml)
+├── talc.gleam               # CLI entry point (glint commands)
+└── talc/
+    ├── gleam_toml.gleam     # gleam.toml parser → GleamConfig
+    ├── talc_config.gleam    # talc.toml parser → TalcConfig
+    ├── package_json.gleam   # package.json generation logic
+    └── output.gleam         # File I/O: write output dir, copy files
 test/
-├── talc_test.gleam
-└── test_helpers.gleam   # Shared test utilities
+├── talc_test.gleam          # Test runner entry point
+├── gleam_toml_test.gleam    # gleam.toml parsing tests
+├── talc_config_test.gleam   # talc.toml parsing tests
+├── package_json_test.gleam  # JSON generation tests
+└── test_helpers.gleam       # Shared test utilities
 ```
 
 ## Architecture
@@ -76,6 +83,11 @@ case result {
 
 ### Runtime
 - `gleam_stdlib` - Standard library
+- `tom` - TOML parser (for gleam.toml and talc.toml)
+- `simplifile` - Filesystem operations
+- `gleam_json` - JSON serialization
+- `glint` - CLI framework
+- `argv` - Cross-platform argument fetching
 
 ### Development
 - `gleeunit` - Testing framework

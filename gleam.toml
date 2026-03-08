@@ -1,6 +1,6 @@
 name = "talc"
 version = "0.1.0"
-description = "A Gleam CLI tool"
+description = "npm packaging tool for Gleam libraries"
 licences = ["MIT"]
 repository = { type = "github", user = "tylerbutler", repo = "talc" }
 gleam = ">= 1.7.0"
@@ -11,7 +11,12 @@ internal_modules = [
 ]
 
 [dependencies]
-gleam_stdlib = ">= 0.48.0 and < 2.0.0"
+gleam_stdlib = ">= 0.70.0 and < 1.0.0"
+tom = ">= 2.0.0 and < 3.0.0"
+simplifile = ">= 2.3.0 and < 3.0.0"
+gleam_json = ">= 3.1.0 and < 4.0.0"
+glint = ">= 1.2.0 and < 2.0.0"
+argv = ">= 1.0.0 and < 2.0.0"
 
 [dev-dependencies]
-gleeunit = ">= 1.0.0 and < 2.0.0"
+gleeunit = ">= 1.9.0 and < 2.0.0"
