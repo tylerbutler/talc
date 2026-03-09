@@ -55,6 +55,7 @@ pub fn generate_with_scope_test() {
       ..test_talc_config(),
       package: PackageConfig(
         scope: Some("@myorg"),
+        version: None,
         registry: None,
         output_dir: "npm_dist",
       ),
@@ -160,6 +161,21 @@ pub fn validate_missing_version_test() {
   let gleam = GleamConfig(..test_gleam_config(), version: "")
   package_json.validate(gleam)
   |> should.be_error()
+}
+
+pub fn generate_with_version_override_test() {
+  let gleam = test_gleam_config()
+  let talc =
+    TalcConfig(
+      ..test_talc_config(),
+      package: PackageConfig(..test_talc_config().package, version: Some("2.0.0-beta.1")),
+    )
+
+  package_json.generate(gleam, talc)
+  |> should.be_ok()
+  |> fn(json: String) {
+    json |> string_contains("\"version\":\"2.0.0-beta.1\"") |> should.be_true()
+  }
 }
 
 pub fn check_report_valid_test() {

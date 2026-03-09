@@ -34,10 +34,14 @@ pub fn generate_with_modules(
   module_names: List(String),
 ) -> Result(String, GenerationError) {
   let npm_name = build_npm_name(gleam_config.name, talc_config)
+  let version = case talc_config.package.version {
+    Some(v) -> v
+    None -> gleam_config.version
+  }
 
   let base_fields = [
     #("name", json.string(npm_name)),
-    #("version", json.string(gleam_config.version)),
+    #("version", json.string(version)),
     #("type", json.string("module")),
   ]
 
@@ -217,11 +221,15 @@ pub fn check_report(
   case validation, generation {
     Ok(_), Ok(json_str) -> {
       let npm_name = build_npm_name(gleam_config.name, talc_config)
+      let version = case talc_config.package.version {
+        Some(v) -> v
+        None -> gleam_config.version
+      }
       "✓ Package: "
       <> npm_name
       <> "\n"
       <> "✓ Version: "
-      <> gleam_config.version
+      <> version
       <> "\n"
       <> "✓ package.json is valid ("
       <> int.to_string(string.byte_size(json_str))

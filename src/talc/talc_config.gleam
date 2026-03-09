@@ -13,6 +13,7 @@ import tom
 pub type PackageConfig {
   PackageConfig(
     scope: Option(String),
+    version: Option(String),
     registry: Option(String),
     output_dir: String,
   )
@@ -30,7 +31,12 @@ pub type TalcConfig {
 /// Returns a TalcConfig with all default values.
 pub fn default() -> TalcConfig {
   TalcConfig(
-    package: PackageConfig(scope: None, registry: None, output_dir: "npm_dist"),
+    package: PackageConfig(
+      scope: None,
+      version: None,
+      registry: None,
+      output_dir: "npm_dist",
+    ),
     extra_fields: [],
     peer_dependencies: [],
   )
@@ -84,6 +90,11 @@ fn parse_package(toml: dict.Dict(String, tom.Toml)) -> PackageConfig {
     Error(_) -> None
   }
 
+  let version = case tom.get_string(toml, ["package", "version"]) {
+    Ok(s) -> Some(s)
+    Error(_) -> None
+  }
+
   let registry = case tom.get_string(toml, ["package", "registry"]) {
     Ok(s) -> Some(s)
     Error(_) -> None
@@ -94,7 +105,12 @@ fn parse_package(toml: dict.Dict(String, tom.Toml)) -> PackageConfig {
     Error(_) -> "npm_dist"
   }
 
-  PackageConfig(scope: scope, registry: registry, output_dir: output_dir)
+  PackageConfig(
+    scope: scope,
+    version: version,
+    registry: registry,
+    output_dir: output_dir,
+  )
 }
 
 fn parse_extra_fields(
