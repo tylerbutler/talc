@@ -59,9 +59,10 @@ pub fn emit_module(
 
   let all_decls = list.append(type_decls, func_decls)
   let imports = typescript.imports_string(ctx)
+  let externals = typescript.external_types_string(ctx)
 
   let content =
-    imports <> string.join(all_decls, "\n\n") <> "\n"
+    imports <> externals <> string.join(all_decls, "\n\n") <> "\n"
 
   EmitResult(content: content, warnings: ctx.warnings)
 }
@@ -196,6 +197,7 @@ fn emit_function(
       ..fn_ctx,
       warnings: ctx.warnings,
       imports: ctx.imports,
+      external_types: ctx.external_types,
     )
   let fn_ctx = typescript.scan_function(fn_ctx, func.parameters, func.return)
 
@@ -227,12 +229,13 @@ fn emit_function(
     <> return_ts
     <> ";"
 
-  // Carry warnings and imports back to the main context
+  // Carry warnings, imports, and external types back to the main context
   let ctx =
     typescript.TypeContext(
       ..ctx,
       warnings: fn_ctx.warnings,
       imports: fn_ctx.imports,
+      external_types: fn_ctx.external_types,
     )
   #(decl, ctx)
 }

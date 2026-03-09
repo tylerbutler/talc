@@ -1,4 +1,4 @@
-import gleam/list
+import gleam/dict
 import gleam/package_interface.{Fn, Named, Tuple, Variable}
 import gleam/string
 import gleeunit/should
@@ -156,15 +156,24 @@ pub fn fn_generic_type_test() {
   ts |> should.equal("(p0: A) => B")
 }
 
-pub fn external_package_type_warning_test() {
+pub fn external_package_type_branded_test() {
   let ctx = typescript.new_context("test", "test")
   let #(ts, ctx) =
     typescript.type_to_ts(
       ctx,
       Named("DateTime", "some_package", "some/module", []),
     )
-  ts |> should.equal("unknown")
-  list.length(ctx.warnings) |> should.equal(1)
+  // External types are emitted by name (branded declaration generated separately)
+  ts |> should.equal("DateTime")
+  // Should track the external type
+  dict.size(ctx.external_types) |> should.equal(1)
+  // Should generate a branded type declaration
+  typescript.external_types_string(ctx)
+  |> string.contains("declare const DateTime: unique symbol;")
+  |> should.be_true()
+  typescript.external_types_string(ctx)
+  |> string.contains("type DateTime = { readonly __opaque: typeof DateTime };")
+  |> should.be_true()
 }
 
 pub fn same_package_type_test() {

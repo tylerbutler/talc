@@ -26,7 +26,15 @@ pub type TypeContext {
     current_module: String,
     /// Maps module paths to lists of type names that need importing
     imports: Dict(String, List(String)),
+    /// External opaque types encountered (package/module/name → type name).
+    /// These need branded type declarations emitted in the .d.ts output.
+    external_types: Dict(String, ExternalType),
   )
+}
+
+/// An opaque type from an external package that needs a branded declaration.
+pub type ExternalType {
+  ExternalType(name: String, package: String, module: String)
 }
 
 /// Creates a new TypeContext for a given package and module.
@@ -41,6 +49,7 @@ pub fn new_context(
     package_name: package_name,
     current_module: current_module,
     imports: dict.new(),
+    external_types: dict.new(),
   )
 }
 
@@ -278,17 +287,25 @@ fn named_type_to_ts(
       }
     }
 
-    // External package types → unknown with warning
+    // External package types → opaque branded type
     _, _, _ -> {
-      let warning =
-        "Cannot map type "
-        <> module
-        <> "."
-        <> name
-        <> " from package "
-        <> package
-        <> " — emitting as unknown"
-      #("unknown", add_warning(ctx, warning))
+      let key = package <> "/" <> module <> "." <> name
+      let ctx =
+        TypeContext(
+          ..ctx,
+          external_types: dict.insert(
+            ctx.external_types,
+            key,
+            ExternalType(name: name, package: package, module: module),
+          ),
+        )
+      case parameters {
+        [] -> #(name, ctx)
+        params -> {
+          let #(param_types, ctx) = map_types(ctx, params)
+          #(name <> "<" <> string.join(param_types, ", ") <> ">", ctx)
+        }
+      }
     }
   }
 }
@@ -318,10 +335,6 @@ fn map_types(
     let #(ts, ctx) = type_to_ts(ctx, t)
     #(list.append(results, [ts]), ctx)
   })
-}
-
-fn add_warning(ctx: TypeContext, warning: String) -> TypeContext {
-  TypeContext(..ctx, warnings: list.append(ctx.warnings, [warning]))
 }
 
 /// Records a type name as needing to be imported from the given module.
@@ -360,6 +373,38 @@ pub fn imports_string(ctx: TypeContext) -> String {
           <> "\";"
         })
       string.join(import_lines, "\n") <> "\n\n"
+    }
+  }
+}
+
+/// Generates branded type declarations for external opaque types.
+/// Returns the declarations string and a list of type names that were emitted.
+pub fn external_types_string(ctx: TypeContext) -> String {
+  case dict.size(ctx.external_types) {
+    0 -> ""
+    _ -> {
+      let decls =
+        dict.to_list(ctx.external_types)
+        |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+        |> list.map(fn(pair) {
+          let #(_, ext) = pair
+          "/** Opaque type from "
+          <> ext.package
+          <> " ("
+          <> ext.module
+          <> "."
+          <> ext.name
+          <> "). */\n"
+          <> "declare const "
+          <> ext.name
+          <> ": unique symbol;\n"
+          <> "type "
+          <> ext.name
+          <> " = { readonly __opaque: typeof "
+          <> ext.name
+          <> " };"
+        })
+      string.join(decls, "\n\n") <> "\n\n"
     }
   }
 }
