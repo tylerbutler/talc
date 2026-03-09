@@ -22,8 +22,12 @@ pub type EmitResult {
 }
 
 /// Emits a .d.ts file for a single Gleam module.
-pub fn emit_module(module: Module, package_name: String) -> EmitResult {
-  let ctx = typescript.new_context(package_name)
+pub fn emit_module(
+  module: Module,
+  package_name: String,
+  module_name: String,
+) -> EmitResult {
+  let ctx = typescript.new_context(package_name, module_name)
 
   // Emit type definitions (records, ADTs, opaque)
   let #(type_decls, ctx) =
@@ -54,7 +58,10 @@ pub fn emit_module(module: Module, package_name: String) -> EmitResult {
     })
 
   let all_decls = list.append(type_decls, func_decls)
-  let content = string.join(all_decls, "\n\n") <> "\n"
+  let imports = typescript.imports_string(ctx)
+
+  let content =
+    imports <> string.join(all_decls, "\n\n") <> "\n"
 
   EmitResult(content: content, warnings: ctx.warnings)
 }
@@ -72,6 +79,9 @@ fn emit_type_definition(
       let ctx = add_warning(ctx, warning)
       let decl =
         doc_comment(type_def.documentation)
+        <> "declare const "
+        <> name
+        <> ": unique symbol;\n"
         <> "export type "
         <> name
         <> " = { readonly __opaque: typeof "
@@ -113,49 +123,54 @@ fn emit_type_definition(
       #(decl, ctx)
     }
 
-    // Multiple constructors — emit as discriminated union (ADT)
+    // Multiple constructors — emit as class-based union (ADT)
+    // Uses `declare class` to match Gleam's JS runtime representation,
+    // enabling `instanceof` narrowing.
     constructors -> {
       let ctx = typescript.scan_type_definition(ctx, type_def)
       let generics = type_params_string(type_def.parameters, ctx)
 
-      let #(interfaces, ctx) =
+      let #(classes, ctx) =
         list.fold(constructors, #([], ctx), fn(acc, constructor) {
-          let #(ifaces, ctx) = acc
+          let #(cls_list, ctx) = acc
 
           let #(fields, ctx) =
-            list.fold(constructor.parameters, #([], ctx), fn(facc, param) {
-              let #(flds, ctx) = facc
-              let field_name = case param.label {
-                Some(label) -> label
-                None -> "field_" <> int.to_string(list.length(flds))
-              }
-              let #(ts_type, ctx) = typescript.type_to_ts(ctx, param.type_)
-              let field = "  readonly " <> field_name <> ": " <> ts_type <> ";"
-              #(list.append(flds, [field]), ctx)
-            })
+            list.index_fold(
+              constructor.parameters,
+              #([], ctx),
+              fn(facc, param, index) {
+                let #(flds, ctx) = facc
+                let field_name = case param.label {
+                  Some(label) -> label
+                  None -> int.to_string(index)
+                }
+                let #(ts_type, ctx) = typescript.type_to_ts(ctx, param.type_)
+                let field =
+                  "  readonly " <> field_name <> ": " <> ts_type <> ";"
+                #(list.append(flds, [field]), ctx)
+              },
+            )
 
-          let tag_field =
-            "  readonly [Symbol.for(\"gleam_type\")]: \""
-            <> constructor.name
-            <> "\";"
-          let all_fields = [tag_field, ..fields]
-
-          let iface =
-            "export interface "
+          let cls =
+            "export declare class "
             <> constructor.name
             <> generics
             <> " {\n"
-            <> string.join(all_fields, "\n")
-            <> "\n}"
+            <> string.join(fields, "\n")
+            <> case fields {
+              [] -> ""
+              _ -> "\n"
+            }
+            <> "}"
 
-          #(list.append(ifaces, [iface]), ctx)
+          #(list.append(cls_list, [cls]), ctx)
         })
 
       let constructor_names =
         list.map(constructors, fn(c) { c.name <> generics })
       let union_decl =
         doc_comment(type_def.documentation)
-        <> string.join(interfaces, "\n\n")
+        <> string.join(classes, "\n\n")
         <> "\n\nexport type "
         <> name
         <> generics
@@ -175,8 +190,13 @@ fn emit_function(
   func: Function,
 ) -> #(String, TypeContext) {
   // Create a fresh context for this function's generics
-  let fn_ctx = typescript.new_context(ctx.package_name)
-  let fn_ctx = typescript.TypeContext(..fn_ctx, warnings: ctx.warnings)
+  let fn_ctx = typescript.new_context(ctx.package_name, ctx.current_module)
+  let fn_ctx =
+    typescript.TypeContext(
+      ..fn_ctx,
+      warnings: ctx.warnings,
+      imports: ctx.imports,
+    )
   let fn_ctx = typescript.scan_function(fn_ctx, func.parameters, func.return)
 
   let #(param_strs, fn_ctx) =
@@ -194,10 +214,12 @@ fn emit_function(
   let #(return_ts, fn_ctx) = typescript.type_to_ts(fn_ctx, func.return)
   let generics = typescript.generics_string(fn_ctx)
 
+  let js_name = escape_js_reserved(name)
+
   let decl =
     doc_comment(func.documentation)
     <> "export declare function "
-    <> name
+    <> js_name
     <> generics
     <> "("
     <> string.join(param_strs, ", ")
@@ -205,8 +227,13 @@ fn emit_function(
     <> return_ts
     <> ";"
 
-  // Carry warnings back to the main context
-  let ctx = typescript.TypeContext(..ctx, warnings: fn_ctx.warnings)
+  // Carry warnings and imports back to the main context
+  let ctx =
+    typescript.TypeContext(
+      ..ctx,
+      warnings: fn_ctx.warnings,
+      imports: fn_ctx.imports,
+    )
   #(decl, ctx)
 }
 
@@ -248,4 +275,22 @@ fn doc_comment(doc: option.Option(String)) -> String {
 
 fn add_warning(ctx: TypeContext, warning: String) -> TypeContext {
   typescript.TypeContext(..ctx, warnings: list.append(ctx.warnings, [warning]))
+}
+
+/// Appends `$` to JavaScript/TypeScript reserved words to match Gleam's
+/// JS code generation. Without this, the .d.ts declarations would use
+/// names like `new` or `null` which are not valid identifiers.
+fn escape_js_reserved(name: String) -> String {
+  case name {
+    "await" | "arguments" | "break" | "case" | "catch" | "class" | "const"
+    | "continue" | "debugger" | "default" | "delete" | "do" | "else" | "enum"
+    | "eval" | "export" | "extends" | "false" | "finally" | "for"
+    | "function" | "if" | "implements" | "import" | "in" | "instanceof"
+    | "interface" | "let" | "new" | "null" | "package" | "private"
+    | "protected" | "public" | "return" | "static" | "super" | "switch"
+    | "this" | "throw" | "true" | "try" | "typeof" | "undefined" | "var"
+    | "void" | "while" | "with" | "yield"
+    -> name <> "$"
+    _ -> name
+  }
 }

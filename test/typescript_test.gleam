@@ -1,46 +1,47 @@
 import gleam/list
 import gleam/package_interface.{Fn, Named, Tuple, Variable}
+import gleam/string
 import gleeunit/should
 import talc/typescript
 
 pub fn int_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) = typescript.type_to_ts(ctx, Named("Int", "", "gleam", []))
   ts |> should.equal("number")
 }
 
 pub fn float_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) = typescript.type_to_ts(ctx, Named("Float", "", "gleam", []))
   ts |> should.equal("number")
 }
 
 pub fn string_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) = typescript.type_to_ts(ctx, Named("String", "", "gleam", []))
   ts |> should.equal("string")
 }
 
 pub fn bool_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) = typescript.type_to_ts(ctx, Named("Bool", "", "gleam", []))
   ts |> should.equal("boolean")
 }
 
 pub fn nil_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) = typescript.type_to_ts(ctx, Named("Nil", "", "gleam", []))
   ts |> should.equal("undefined")
 }
 
 pub fn bit_array_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) = typescript.type_to_ts(ctx, Named("BitArray", "", "gleam", []))
   ts |> should.equal("Uint8Array")
 }
 
 pub fn list_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -50,14 +51,14 @@ pub fn list_type_test() {
 }
 
 pub fn list_generic_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) =
     typescript.type_to_ts(ctx, Named("List", "", "gleam", [Variable(1)]))
   ts |> should.equal("Array<A>")
 }
 
 pub fn result_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -73,7 +74,7 @@ pub fn result_type_test() {
 }
 
 pub fn option_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -85,7 +86,7 @@ pub fn option_type_test() {
 }
 
 pub fn dict_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -98,7 +99,7 @@ pub fn dict_type_test() {
 }
 
 pub fn set_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -110,7 +111,7 @@ pub fn set_type_test() {
 }
 
 pub fn dynamic_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -120,7 +121,7 @@ pub fn dynamic_type_test() {
 }
 
 pub fn variable_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts1, ctx) = typescript.type_to_ts(ctx, Variable(1))
   let #(ts2, ctx) = typescript.type_to_ts(ctx, Variable(2))
   let #(ts3, _) = typescript.type_to_ts(ctx, Variable(1))
@@ -130,7 +131,7 @@ pub fn variable_type_test() {
 }
 
 pub fn tuple_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -140,7 +141,7 @@ pub fn tuple_type_test() {
 }
 
 pub fn fn_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -150,13 +151,13 @@ pub fn fn_type_test() {
 }
 
 pub fn fn_generic_type_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, _) = typescript.type_to_ts(ctx, Fn([Variable(1)], Variable(2)))
   ts |> should.equal("(p0: A) => B")
 }
 
 pub fn external_package_type_warning_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(ts, ctx) =
     typescript.type_to_ts(
       ctx,
@@ -167,29 +168,55 @@ pub fn external_package_type_warning_test() {
 }
 
 pub fn same_package_type_test() {
-  let ctx = typescript.new_context("mylib")
-  let #(ts, _) =
+  let ctx = typescript.new_context("mylib", "mylib")
+  let #(ts, ctx) =
     typescript.type_to_ts(ctx, Named("MyType", "mylib", "mylib/types", []))
   ts |> should.equal("MyType")
+  // Should track the import from mylib/types
+  typescript.imports_string(ctx)
+  |> string.contains("import type { MyType } from \"./mylib/types.js\";")
+  |> should.be_true()
 }
 
 pub fn same_package_generic_type_test() {
-  let ctx = typescript.new_context("mylib")
-  let #(ts, _) =
+  let ctx = typescript.new_context("mylib", "mylib")
+  let #(ts, ctx) =
     typescript.type_to_ts(
       ctx,
       Named("Box", "mylib", "mylib/types", [Variable(1)]),
     )
   ts |> should.equal("Box<A>")
+  // Should track the import
+  typescript.imports_string(ctx)
+  |> string.contains("import type { Box } from \"./mylib/types.js\";")
+  |> should.be_true()
+}
+
+pub fn same_module_type_no_import_test() {
+  let ctx = typescript.new_context("mylib", "mylib/types")
+  let #(ts, ctx) =
+    typescript.type_to_ts(ctx, Named("MyType", "mylib", "mylib/types", []))
+  ts |> should.equal("MyType")
+  // Should NOT track an import (same module)
+  typescript.imports_string(ctx) |> should.equal("")
+}
+
+pub fn sibling_module_import_path_test() {
+  let ctx = typescript.new_context("birch", "birch/handler")
+  let #(_, ctx) =
+    typescript.type_to_ts(ctx, Named("Level", "birch", "birch/level", []))
+  typescript.imports_string(ctx)
+  |> string.contains("import type { Level } from \"./level.js\";")
+  |> should.be_true()
 }
 
 pub fn generics_string_empty_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   typescript.generics_string(ctx) |> should.equal("")
 }
 
 pub fn generics_string_with_vars_test() {
-  let ctx = typescript.new_context("test")
+  let ctx = typescript.new_context("test", "test")
   let #(_, ctx) = typescript.type_to_ts(ctx, Variable(1))
   let #(_, ctx) = typescript.type_to_ts(ctx, Variable(2))
   typescript.generics_string(ctx) |> should.equal("<A, B>")

@@ -29,7 +29,7 @@ fn empty_module() -> Module {
 }
 
 pub fn emit_empty_module_test() {
-  let result = dts.emit_module(empty_module(), "test")
+  let result = dts.emit_module(empty_module(), "test", "test")
   result.content |> should.equal("\n")
   result.warnings |> should.equal([])
 }
@@ -61,7 +61,7 @@ pub fn emit_simple_function_test() {
       ]),
     )
 
-  let result = dts.emit_module(module, "test")
+  let result = dts.emit_module(module, "test", "test")
   result.content
   |> string.contains(
     "export declare function add(a: number, b: number): number;",
@@ -92,7 +92,7 @@ pub fn emit_generic_function_test() {
       ]),
     )
 
-  let result = dts.emit_module(module, "test")
+  let result = dts.emit_module(module, "test", "test")
   result.content
   |> string.contains("export declare function identity<A>(value: A): A;")
   |> should.be_true()
@@ -126,7 +126,7 @@ pub fn emit_record_type_test() {
       ]),
     )
 
-  let result = dts.emit_module(module, "test")
+  let result = dts.emit_module(module, "test", "test")
   result.content
   |> string.contains("export interface Person")
   |> should.be_true()
@@ -176,17 +176,21 @@ pub fn emit_adt_type_test() {
       ]),
     )
 
-  let result = dts.emit_module(module, "test")
-  // Check discriminated union
+  let result = dts.emit_module(module, "test", "test")
+  // Check union type
   result.content
   |> string.contains("export type Shape = Circle | Rectangle;")
   |> should.be_true()
-  // Check Symbol.for tag
+  // Check class declarations
   result.content
-  |> string.contains("[Symbol.for(\"gleam_type\")]: \"Circle\"")
+  |> string.contains("export declare class Circle")
   |> should.be_true()
   result.content
-  |> string.contains("[Symbol.for(\"gleam_type\")]: \"Rectangle\"")
+  |> string.contains("export declare class Rectangle")
+  |> should.be_true()
+  // Check fields
+  result.content
+  |> string.contains("readonly radius: number;")
   |> should.be_true()
 }
 
@@ -207,9 +211,13 @@ pub fn emit_opaque_type_test() {
       ]),
     )
 
-  let result = dts.emit_module(module, "test")
+  let result = dts.emit_module(module, "test", "test")
   result.content
   |> string.contains("export type Secret")
+  |> should.be_true()
+  // Should include declare const for valid branded type
+  result.content
+  |> string.contains("declare const Secret: unique symbol;")
   |> should.be_true()
   // Should produce a warning
   result.warnings
@@ -243,7 +251,7 @@ pub fn skip_non_js_function_test() {
       ]),
     )
 
-  let result = dts.emit_module(module, "test")
+  let result = dts.emit_module(module, "test", "test")
   result.content
   |> string.contains("erlang_only")
   |> should.be_false()

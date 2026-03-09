@@ -22,7 +22,7 @@ packages = [
 argv = { version = ">= 1.0.0 and < 2.0.0" }
 gleam_json = { version = ">= 3.1.0 and < 4.0.0" }
 gleam_package_interface = { version = ">= 3.0.1 and < 4.0.0" }
-gleam_stdlib = { version = ">= 0.70.0 and < 1.0.0" }
+gleam_stdlib = { version = ">= 0.48.0 and < 2.0.0" }
 gleeunit = { version = ">= 1.9.0 and < 2.0.0" }
 glint = { version = ">= 1.2.0 and < 2.0.0" }
 simplifile = { version = ">= 2.3.0 and < 3.0.0" }

@@ -205,7 +205,7 @@ fn run_generate(
     |> list.fold(#([], []), fn(acc, pair) {
       let #(files, warnings) = acc
       let #(module_name, module) = pair
-      let result = dts.emit_module(module, package.name)
+      let result = dts.emit_module(module, package.name, module_name)
       let dts_path = interface.module_to_dts_path(module_name)
       #(
         list.append(files, [#(dts_path, result.content)]),
