@@ -101,18 +101,18 @@ case result {
 - `gleam_package_interface` - Decoder for Gleam compiler's package interface JSON
 
 ### Development
-- `gleeunit` - Testing framework
+- `startest` - Testing framework
 
 ## Testing
 
-Tests use `gleeunit` framework:
+Tests use `startest` framework:
 
 ```gleam
-import gleeunit/should
+import startest/expect
 
 pub fn example_test() {
   some_function()
-  |> should.equal(expected_value)
+  |> expect.to_equal(expected_value)
 }
 ```
 

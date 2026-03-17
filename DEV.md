@@ -157,12 +157,12 @@ gleam test -- --verbose
 Tests use the `gleeunit` framework:
 
 ```gleam
-import gleeunit/should
+import startest/expect
 import talc
 
 pub fn my_feature_test() {
   talc.some_function("input")
-  |> should.equal(expected_output)
+  |> expect.to_equal(expected_output)
 }
 
 pub fn error_case_test() {

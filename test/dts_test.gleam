@@ -5,7 +5,7 @@ import gleam/package_interface.{
   Parameter, TypeConstructor, TypeDefinition,
 }
 import gleam/string
-import gleeunit/should
+import startest/expect
 import talc/dts
 
 fn test_implementations() -> Implementations {
@@ -30,8 +30,8 @@ fn empty_module() -> Module {
 
 pub fn emit_empty_module_test() {
   let result = dts.emit_module(empty_module(), "test", "test_module")
-  result.content |> should.equal("\n")
-  result.warnings |> should.equal([])
+  result.content |> expect.to_equal("\n")
+  result.warnings |> expect.to_equal([])
 }
 
 pub fn emit_simple_function_test() {
@@ -66,7 +66,7 @@ pub fn emit_simple_function_test() {
   |> string.contains(
     "export declare function add(a: number, b: number): number;",
   )
-  |> should.be_true()
+  |> expect.to_be_true()
 }
 
 pub fn emit_generic_function_test() {
@@ -95,7 +95,7 @@ pub fn emit_generic_function_test() {
   let result = dts.emit_module(module, "test", "test_module")
   result.content
   |> string.contains("export declare function identity<A>(value: A): A;")
-  |> should.be_true()
+  |> expect.to_be_true()
 }
 
 pub fn emit_record_type_test() {
@@ -129,13 +129,13 @@ pub fn emit_record_type_test() {
   let result = dts.emit_module(module, "test", "test_module")
   result.content
   |> string.contains("export interface Person")
-  |> should.be_true()
+  |> expect.to_be_true()
   result.content
   |> string.contains("readonly name: string;")
-  |> should.be_true()
+  |> expect.to_be_true()
   result.content
   |> string.contains("readonly age: number;")
-  |> should.be_true()
+  |> expect.to_be_true()
 }
 
 pub fn emit_adt_type_test() {
@@ -180,18 +180,18 @@ pub fn emit_adt_type_test() {
   // Check discriminated union
   result.content
   |> string.contains("export type Shape = Circle | Rectangle;")
-  |> should.be_true()
+  |> expect.to_be_true()
   // Check $type discriminant tag
   result.content
   |> string.contains("[$type]: \"Circle\"")
-  |> should.be_true()
+  |> expect.to_be_true()
   result.content
   |> string.contains("[$type]: \"Rectangle\"")
-  |> should.be_true()
+  |> expect.to_be_true()
   // Check that the unique symbol declaration is included
   result.content
   |> string.contains("declare const $type: unique symbol;")
-  |> should.be_true()
+  |> expect.to_be_true()
 }
 
 pub fn emit_opaque_type_test() {
@@ -214,10 +214,10 @@ pub fn emit_opaque_type_test() {
   let result = dts.emit_module(module, "test", "test_module")
   result.content
   |> string.contains("export type Secret")
-  |> should.be_true()
+  |> expect.to_be_true()
   // Should produce a warning
   result.warnings
-  |> should.not_equal([])
+  |> expect.to_not_equal([])
 }
 
 pub fn skip_non_js_function_test() {
@@ -250,7 +250,7 @@ pub fn skip_non_js_function_test() {
   let result = dts.emit_module(module, "test", "test_module")
   result.content
   |> string.contains("erlang_only")
-  |> should.be_false()
+  |> expect.to_be_false()
 }
 
 pub fn emit_reserved_word_function_test() {
@@ -300,14 +300,14 @@ pub fn emit_reserved_word_function_test() {
   // Reserved words should be escaped with $
   result.content
   |> string.contains("export declare function new$(name: string): string;")
-  |> should.be_true()
+  |> expect.to_be_true()
   result.content
   |> string.contains("export declare function null$(): undefined;")
-  |> should.be_true()
+  |> expect.to_be_true()
   // Non-reserved words should not be escaped
   result.content
   |> string.contains("export declare function safe_name(): undefined;")
-  |> should.be_true()
+  |> expect.to_be_true()
 }
 
 pub fn emit_cross_module_imports_test() {
@@ -353,8 +353,8 @@ pub fn emit_cross_module_imports_test() {
   // Should include import statements
   result.content
   |> string.contains("import type { Level } from \"./types.js\";")
-  |> should.be_true()
+  |> expect.to_be_true()
   result.content
   |> string.contains("import type { Handler } from \"./util.js\";")
-  |> should.be_true()
+  |> expect.to_be_true()
 }
