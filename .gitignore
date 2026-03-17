@@ -24,3 +24,4 @@ Thumbs.db
 # Local settings
 .claude/settings.local.json
 npm_dist/
+test/fixtures/birch/

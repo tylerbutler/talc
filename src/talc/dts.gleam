@@ -8,6 +8,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/package_interface.{type Function, type Module, type TypeDefinition}
+import gleam/set.{type Set}
 import gleam/string
 import talc/typescript.{type TypeContext}
 
@@ -22,8 +23,12 @@ pub type EmitResult {
 }
 
 /// Emits a .d.ts file for a single Gleam module.
-pub fn emit_module(module: Module, package_name: String) -> EmitResult {
-  let ctx = typescript.new_context(package_name)
+pub fn emit_module(
+  module: Module,
+  package_name: String,
+  module_name: String,
+) -> EmitResult {
+  let ctx = typescript.new_context(package_name, module_name)
 
   // Emit type definitions (records, ADTs, opaque)
   let #(type_decls, ctx) =
@@ -54,7 +59,37 @@ pub fn emit_module(module: Module, package_name: String) -> EmitResult {
     })
 
   let all_decls = list.append(type_decls, func_decls)
-  let content = string.join(all_decls, "\n\n") <> "\n"
+
+  // Build import statements for cross-module type references
+  let import_stmts =
+    dict.to_list(ctx.imports)
+    |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+    |> list.map(fn(pair) {
+      let #(mod, names) = pair
+      let import_path = typescript.relative_import_path(module_name, mod)
+      let sorted_names =
+        set.to_list(names)
+        |> list.sort(string.compare)
+      "import type { "
+      <> string.join(sorted_names, ", ")
+      <> " } from \""
+      <> import_path
+      <> "\";"
+    })
+
+  // Build the gleam type symbol declaration if ADTs were emitted
+  let symbol_decl = case ctx.needs_gleam_type_symbol {
+    True -> ["declare const $type: unique symbol;"]
+    False -> []
+  }
+
+  let preamble = list.append(import_stmts, symbol_decl)
+  let preamble_str = case preamble {
+    [] -> ""
+    _ -> string.join(preamble, "\n") <> "\n\n"
+  }
+
+  let content = preamble_str <> string.join(all_decls, "\n\n") <> "\n"
 
   EmitResult(content: content, warnings: ctx.warnings)
 }
@@ -74,9 +109,9 @@ fn emit_type_definition(
         doc_comment(type_def.documentation)
         <> "export type "
         <> name
-        <> " = { readonly __opaque: typeof "
+        <> " = { readonly __opaque: \""
         <> name
-        <> " };"
+        <> "\" };"
       #(decl, ctx)
     }
 
@@ -116,6 +151,7 @@ fn emit_type_definition(
     // Multiple constructors — emit as discriminated union (ADT)
     constructors -> {
       let ctx = typescript.scan_type_definition(ctx, type_def)
+      let ctx = typescript.mark_needs_gleam_type_symbol(ctx)
       let generics = type_params_string(type_def.parameters, ctx)
 
       let #(interfaces, ctx) =
@@ -134,10 +170,7 @@ fn emit_type_definition(
               #(list.append(flds, [field]), ctx)
             })
 
-          let tag_field =
-            "  readonly [Symbol.for(\"gleam_type\")]: \""
-            <> constructor.name
-            <> "\";"
+          let tag_field = "  readonly [$type]: \"" <> constructor.name <> "\";"
           let all_fields = [tag_field, ..fields]
 
           let iface =
@@ -175,8 +208,13 @@ fn emit_function(
   func: Function,
 ) -> #(String, TypeContext) {
   // Create a fresh context for this function's generics
-  let fn_ctx = typescript.new_context(ctx.package_name)
-  let fn_ctx = typescript.TypeContext(..fn_ctx, warnings: ctx.warnings)
+  let fn_ctx = typescript.new_context(ctx.package_name, ctx.current_module)
+  let fn_ctx =
+    typescript.TypeContext(
+      ..fn_ctx,
+      warnings: ctx.warnings,
+      imports: ctx.imports,
+    )
   let fn_ctx = typescript.scan_function(fn_ctx, func.parameters, func.return)
 
   let #(param_strs, fn_ctx) =
@@ -194,10 +232,11 @@ fn emit_function(
   let #(return_ts, fn_ctx) = typescript.type_to_ts(fn_ctx, func.return)
   let generics = typescript.generics_string(fn_ctx)
 
+  let js_name = escape_js_name(name)
   let decl =
     doc_comment(func.documentation)
     <> "export declare function "
-    <> name
+    <> js_name
     <> generics
     <> "("
     <> string.join(param_strs, ", ")
@@ -205,8 +244,13 @@ fn emit_function(
     <> return_ts
     <> ";"
 
-  // Carry warnings back to the main context
-  let ctx = typescript.TypeContext(..ctx, warnings: fn_ctx.warnings)
+  // Carry warnings and imports back to the main context
+  let ctx =
+    typescript.TypeContext(
+      ..ctx,
+      warnings: fn_ctx.warnings,
+      imports: fn_ctx.imports,
+    )
   #(decl, ctx)
 }
 
@@ -248,4 +292,25 @@ fn doc_comment(doc: option.Option(String)) -> String {
 
 fn add_warning(ctx: TypeContext, warning: String) -> TypeContext {
   typescript.TypeContext(..ctx, warnings: list.append(ctx.warnings, [warning]))
+}
+
+/// JavaScript/TypeScript reserved words that cannot be used as identifiers.
+/// Gleam's compiler appends `$` to these names in generated JavaScript.
+fn js_reserved_words() -> Set(String) {
+  set.from_list([
+    "await", "break", "case", "catch", "class", "const", "continue", "debugger",
+    "default", "delete", "do", "else", "enum", "export", "extends", "false",
+    "finally", "for", "function", "if", "import", "in", "instanceof", "let",
+    "new", "null", "return", "super", "switch", "this", "throw", "true", "try",
+    "typeof", "undefined", "var", "void", "while", "with", "yield",
+  ])
+}
+
+/// Escape a name that may be a JavaScript/TypeScript reserved word.
+/// Gleam appends `$` to reserved words in its JS output, so we match that.
+fn escape_js_name(name: String) -> String {
+  case set.contains(js_reserved_words(), name) {
+    True -> name <> "$"
+    False -> name
+  }
 }

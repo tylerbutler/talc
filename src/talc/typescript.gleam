@@ -9,6 +9,7 @@ import gleam/list
 import gleam/package_interface.{
   type Parameter, type Type, type TypeDefinition, Fn, Named, Tuple, Variable,
 }
+import gleam/set.{type Set}
 import gleam/string
 
 /// Context for tracking type variable → generic letter mappings.
@@ -22,16 +23,25 @@ pub type TypeContext {
     warnings: List(String),
     /// The package name (for resolving same-package types)
     package_name: String,
+    /// The current module being emitted (for computing relative imports)
+    current_module: String,
+    /// Cross-module type imports: maps module path → set of type names
+    imports: Dict(String, Set(String)),
+    /// Whether any ADT discriminant tag was emitted (needs $type symbol)
+    needs_gleam_type_symbol: Bool,
   )
 }
 
-/// Creates a new TypeContext for a given package.
-pub fn new_context(package_name: String) -> TypeContext {
+/// Creates a new TypeContext for a given package and module.
+pub fn new_context(package_name: String, current_module: String) -> TypeContext {
   TypeContext(
     variables: dict.new(),
     next_var: 0,
     warnings: [],
     package_name: package_name,
+    current_module: current_module,
+    imports: dict.new(),
+    needs_gleam_type_symbol: False,
   )
 }
 
@@ -251,8 +261,12 @@ fn named_type_to_ts(
     // Order (from gleam_stdlib)
     "gleam_stdlib", "gleam/order", "Order" -> #("\"Lt\" | \"Eq\" | \"Gt\"", ctx)
 
-    // Same-package types → reference by name with generics
-    pkg, _, n if pkg == ctx.package_name || pkg == "" -> {
+    // Same-package types → reference by name with generics, track imports
+    pkg, mod, n if pkg == ctx.package_name || pkg == "" -> {
+      let ctx = case mod != ctx.current_module && mod != "" && mod != "gleam" {
+        True -> add_import(ctx, mod, n)
+        False -> ctx
+      }
       case parameters {
         [] -> #(n, ctx)
         params -> {
@@ -306,4 +320,64 @@ fn map_types(
 
 fn add_warning(ctx: TypeContext, warning: String) -> TypeContext {
   TypeContext(..ctx, warnings: list.append(ctx.warnings, [warning]))
+}
+
+/// Records that a type needs to be imported from another module.
+fn add_import(
+  ctx: TypeContext,
+  module: String,
+  type_name: String,
+) -> TypeContext {
+  let existing = case dict.get(ctx.imports, module) {
+    Ok(names) -> names
+    Error(_) -> set.new()
+  }
+  TypeContext(
+    ..ctx,
+    imports: dict.insert(ctx.imports, module, set.insert(existing, type_name)),
+  )
+}
+
+/// Marks the context as needing the gleam type discriminant symbol.
+pub fn mark_needs_gleam_type_symbol(ctx: TypeContext) -> TypeContext {
+  TypeContext(..ctx, needs_gleam_type_symbol: True)
+}
+
+/// Computes a relative import path from one module to another.
+/// Both paths are Gleam module paths (e.g., "birch/handler", "birch/level").
+pub fn relative_import_path(from_module: String, to_module: String) -> String {
+  // Get the directory segments of the current module
+  let from_parts = case string.split(from_module, "/") {
+    [] -> []
+    parts -> {
+      let assert [_, ..rest] = list.reverse(parts)
+      list.reverse(rest)
+    }
+  }
+  let to_parts = string.split(to_module, "/")
+
+  // Find common prefix length
+  let common_len = common_prefix_length(from_parts, to_parts, 0)
+
+  // Build "../" for each segment above the common prefix
+  let ups = list.length(from_parts) - common_len
+  let up_str = string.repeat("../", ups)
+
+  // Build the path down to the target
+  let down_parts = list.drop(to_parts, common_len)
+  let down_str = string.join(down_parts, "/")
+
+  let path = up_str <> down_str <> ".js"
+  case string.starts_with(path, ".") {
+    True -> path
+    False -> "./" <> path
+  }
+}
+
+fn common_prefix_length(a: List(String), b: List(String), acc: Int) -> Int {
+  case a, b {
+    [x, ..rest_a], [y, ..rest_b] if x == y ->
+      common_prefix_length(rest_a, rest_b, acc + 1)
+    _, _ -> acc
+  }
 }
