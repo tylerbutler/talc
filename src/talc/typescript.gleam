@@ -12,6 +12,18 @@ import gleam/package_interface.{
 import gleam/set.{type Set}
 import gleam/string
 
+/// Key for looking up external type mappings: #(package, module, name).
+pub type TypeKey =
+  #(String, String, String)
+
+/// Template for an external type mapping.
+/// The `arity` field indicates how many type parameters the mapping expects.
+/// The `template` is a function that takes the TypeScript parameter strings
+/// and produces the final TypeScript type string.
+pub type TypeMapping {
+  TypeMapping(arity: Int, template: fn(List(String)) -> String)
+}
+
 /// Context for tracking type variable → generic letter mappings.
 pub type TypeContext {
   TypeContext(
@@ -29,10 +41,13 @@ pub type TypeContext {
     imports: Dict(String, Set(String)),
     /// Whether any ADT discriminant tag was emitted (needs $type symbol)
     needs_gleam_type_symbol: Bool,
+    /// External type mappings: maps #(package, module, name) → TypeScript type
+    external_types: Dict(TypeKey, TypeMapping),
   )
 }
 
 /// Creates a new TypeContext for a given package and module.
+/// Includes default external type mappings for well-known Gleam ecosystem types.
 pub fn new_context(package_name: String, current_module: String) -> TypeContext {
   TypeContext(
     variables: dict.new(),
@@ -42,7 +57,67 @@ pub fn new_context(package_name: String, current_module: String) -> TypeContext 
     current_module: current_module,
     imports: dict.new(),
     needs_gleam_type_symbol: False,
+    external_types: default_external_types(),
   )
+}
+
+/// Registers a custom external type mapping.
+pub fn add_external_type(
+  ctx: TypeContext,
+  key: TypeKey,
+  mapping: TypeMapping,
+) -> TypeContext {
+  TypeContext(
+    ..ctx,
+    external_types: dict.insert(ctx.external_types, key, mapping),
+  )
+}
+
+/// Default external type mappings for well-known Gleam ecosystem packages.
+/// These provide better TypeScript types than `unknown` for commonly-used
+/// external types whose @external annotations aren't yet exposed by
+/// gleam_package_interface.
+fn default_external_types() -> Dict(TypeKey, TypeMapping) {
+  dict.from_list([
+    // gleam_erlang
+    #(
+      #("gleam_erlang", "gleam/erlang/process", "Subject"),
+      TypeMapping(arity: 1, template: fn(params) {
+        case params {
+          [t] -> "{ readonly phantom: " <> t <> " }"
+          _ -> "unknown"
+        }
+      }),
+    ),
+    // gleam_http types
+    #(
+      #("gleam_http", "gleam/http", "Method"),
+      TypeMapping(arity: 0, template: fn(_) {
+        "\"GET\" | \"POST\" | \"PUT\" | \"DELETE\" | \"PATCH\" | \"HEAD\" | \"OPTIONS\""
+      }),
+    ),
+    #(
+      #("gleam_http", "gleam/http", "Scheme"),
+      TypeMapping(arity: 0, template: fn(_) { "\"http\" | \"https\"" }),
+    ),
+    // gleam_json
+    #(
+      #("gleam_json", "gleam/json", "Json"),
+      TypeMapping(arity: 0, template: fn(_) { "string" }),
+    ),
+    // gleam_crypto
+    #(
+      #("gleam_crypto", "gleam/crypto", "HashAlgorithm"),
+      TypeMapping(arity: 0, template: fn(_) {
+        "\"sha256\" | \"sha384\" | \"sha512\""
+      }),
+    ),
+    // birl (time library)
+    #(
+      #("birl", "birl", "Time"),
+      TypeMapping(arity: 0, template: fn(_) { "Date" }),
+    ),
+  ])
 }
 
 /// Pre-scans a function signature to discover all type variables
@@ -256,8 +331,10 @@ fn named_type_to_ts(
     }
 
     // Dynamic
-    "gleam_stdlib", "gleam/dynamic", "Dynamic" ->
-      #("unknown /* gleam.Dynamic */", ctx)
+    "gleam_stdlib", "gleam/dynamic", "Dynamic" -> #(
+      "unknown /* gleam.Dynamic */",
+      ctx,
+    )
 
     // Order (from gleam_stdlib)
     "gleam_stdlib", "gleam/order", "Order" -> #("\"Lt\" | \"Eq\" | \"Gt\"", ctx)
@@ -277,17 +354,26 @@ fn named_type_to_ts(
       }
     }
 
-    // External package types → unknown with warning
+    // External package types → check external mappings, then fall back to unknown
     _, _, _ -> {
-      let warning =
-        "Cannot map type "
-        <> module
-        <> "."
-        <> name
-        <> " from package "
-        <> package
-        <> " — emitting as unknown"
-      #("unknown", add_warning(ctx, warning))
+      let key = #(package, module, name)
+      case dict.get(ctx.external_types, key) {
+        Ok(mapping) -> {
+          let #(param_types, ctx) = map_types(ctx, parameters)
+          #(mapping.template(param_types), ctx)
+        }
+        Error(_) -> {
+          let warning =
+            "Cannot map type "
+            <> module
+            <> "."
+            <> name
+            <> " from package "
+            <> package
+            <> " — emitting as unknown"
+          #("unknown", add_warning(ctx, warning))
+        }
+      }
     }
   }
 }

@@ -214,6 +214,7 @@ fn emit_function(
       ..fn_ctx,
       warnings: ctx.warnings,
       imports: ctx.imports,
+      external_types: ctx.external_types,
     )
   let fn_ctx = typescript.scan_function(fn_ctx, func.parameters, func.return)
 

@@ -166,6 +166,91 @@ pub fn external_package_type_warning_test() {
   list.length(ctx.warnings) |> expect.to_equal(1)
 }
 
+pub fn external_json_type_test() {
+  let ctx = typescript.new_context("test", "test_module")
+  let #(ts, ctx) =
+    typescript.type_to_ts(ctx, Named("Json", "gleam_json", "gleam/json", []))
+  ts |> expect.to_equal("string")
+  list.length(ctx.warnings) |> expect.to_equal(0)
+}
+
+pub fn external_http_method_type_test() {
+  let ctx = typescript.new_context("test", "test_module")
+  let #(ts, ctx) =
+    typescript.type_to_ts(ctx, Named("Method", "gleam_http", "gleam/http", []))
+  ts
+  |> expect.to_equal(
+    "\"GET\" | \"POST\" | \"PUT\" | \"DELETE\" | \"PATCH\" | \"HEAD\" | \"OPTIONS\"",
+  )
+  list.length(ctx.warnings) |> expect.to_equal(0)
+}
+
+pub fn external_http_scheme_type_test() {
+  let ctx = typescript.new_context("test", "test_module")
+  let #(ts, ctx) =
+    typescript.type_to_ts(ctx, Named("Scheme", "gleam_http", "gleam/http", []))
+  ts |> expect.to_equal("\"http\" | \"https\"")
+  list.length(ctx.warnings) |> expect.to_equal(0)
+}
+
+pub fn external_birl_time_type_test() {
+  let ctx = typescript.new_context("test", "test_module")
+  let #(ts, ctx) = typescript.type_to_ts(ctx, Named("Time", "birl", "birl", []))
+  ts |> expect.to_equal("Date")
+  list.length(ctx.warnings) |> expect.to_equal(0)
+}
+
+pub fn external_subject_type_test() {
+  let ctx = typescript.new_context("test", "test_module")
+  let #(ts, ctx) =
+    typescript.type_to_ts(
+      ctx,
+      Named("Subject", "gleam_erlang", "gleam/erlang/process", [
+        Named("String", "", "gleam", []),
+      ]),
+    )
+  ts |> expect.to_equal("{ readonly phantom: string }")
+  list.length(ctx.warnings) |> expect.to_equal(0)
+}
+
+pub fn custom_external_type_mapping_test() {
+  let ctx = typescript.new_context("test", "test_module")
+  let ctx =
+    typescript.add_external_type(
+      ctx,
+      #("my_pkg", "my_pkg/types", "MyWidget"),
+      typescript.TypeMapping(arity: 0, template: fn(_) { "HTMLElement" }),
+    )
+  let #(ts, ctx) =
+    typescript.type_to_ts(ctx, Named("MyWidget", "my_pkg", "my_pkg/types", []))
+  ts |> expect.to_equal("HTMLElement")
+  list.length(ctx.warnings) |> expect.to_equal(0)
+}
+
+pub fn external_mapping_with_params_test() {
+  let ctx = typescript.new_context("test", "test_module")
+  let ctx =
+    typescript.add_external_type(
+      ctx,
+      #("my_pkg", "my_pkg/types", "Container"),
+      typescript.TypeMapping(arity: 1, template: fn(params) {
+        case params {
+          [t] -> "Container<" <> t <> ">"
+          _ -> "unknown"
+        }
+      }),
+    )
+  let #(ts, ctx) =
+    typescript.type_to_ts(
+      ctx,
+      Named("Container", "my_pkg", "my_pkg/types", [
+        Named("Int", "", "gleam", []),
+      ]),
+    )
+  ts |> expect.to_equal("Container<number>")
+  list.length(ctx.warnings) |> expect.to_equal(0)
+}
+
 pub fn same_package_type_test() {
   let ctx = typescript.new_context("mylib", "mylib_module")
   let #(ts, _) =
