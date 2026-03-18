@@ -18,6 +18,7 @@ gleam_json = ">= 3.1.0 and < 4.0.0"
 glint = ">= 1.2.0 and < 2.0.0"
 argv = ">= 1.0.0 and < 2.0.0"
 gleam_package_interface = ">= 3.0.1 and < 4.0.0"
+ccl_test_runner = { git = "https://github.com/tylerbutler/ccl_gleam.git", ref = "ab8256d" }
 
 [dev-dependencies]
 startest = ">= 0.8.0 and < 1.0.0"

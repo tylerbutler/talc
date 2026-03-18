@@ -72,20 +72,23 @@ runtime representation:
 ### Configuration
 
 `talc` reads metadata from your `gleam.toml` automatically. To customize the npm package,
-create a `talc.toml` in your project root:
+create a `talc.ccl` in your project root:
 
-```toml
-[package]
-scope = "@myorg"           # npm scope prefix
-output_dir = "npm_dist"    # output directory (default: npm_dist)
-registry = "https://registry.npmjs.org"
+```ccl
+package =
+  scope = @myorg
+  output_dir = npm_dist
+  registry = https://registry.npmjs.org
 
-[package.json]
-homepage = "https://example.com"
-keywords = "gleam,functional"
+package.json =
+  homepage = https://example.com
+  private = true
+  keywords =
+    = gleam
+    = functional
 
-[peer_dependencies]
-react = ">=18"
+peer_dependencies =
+  react = >=18
 ```
 
 ### CI/CD Integration

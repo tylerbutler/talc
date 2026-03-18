@@ -36,7 +36,7 @@ Generates package.json, .d.ts declarations, and assembles npm-ready output from 
 
 fn output_dir_flag() {
   glint.string_flag("output-dir")
-  |> glint.flag_help("Output directory (default: from talc.toml or npm_dist)")
+  |> glint.flag_help("Output directory (default: from talc.ccl or npm_dist)")
 }
 
 fn dry_run_flag() {

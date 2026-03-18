@@ -1,3 +1,4 @@
+import gleam/json
 import gleam/option.{None, Some}
 import gleam/string
 import startest/expect
@@ -109,12 +110,12 @@ pub fn generate_with_extra_fields_test() {
   let gleam = test_gleam_config()
   let talc =
     TalcConfig(..test_talc_config(), extra_fields: [
-      #("homepage", "https://example.com"),
+      #("homepage", json.string("https://example.com")),
     ])
 
-  let json = package_json.generate(gleam, talc) |> expect.to_be_ok()
-  json |> string_contains("\"homepage\"") |> expect.to_be_true()
-  json |> string_contains("https://example.com") |> expect.to_be_true()
+  let result = package_json.generate(gleam, talc) |> expect.to_be_ok()
+  result |> string_contains("\"homepage\"") |> expect.to_be_true()
+  result |> string_contains("https://example.com") |> expect.to_be_true()
 }
 
 pub fn validate_valid_config_test() {
@@ -146,4 +147,76 @@ pub fn check_report_valid_test() {
 
 fn string_contains(haystack: String, needle: String) -> Bool {
   string.contains(haystack, needle)
+}
+
+pub fn extra_fields_override_version_test() {
+  let gleam = test_gleam_config()
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #("version", json.string("2.0.0-beta.1")),
+    ])
+
+  let result = package_json.generate(gleam, talc) |> expect.to_be_ok()
+  result
+  |> string_contains("\"version\":\"2.0.0-beta.1\"")
+  |> expect.to_be_true()
+  // The original version should NOT appear
+  result |> string_contains("\"version\":\"1.0.0\"") |> expect.to_be_false()
+}
+
+pub fn extra_fields_override_name_test() {
+  let gleam = test_gleam_config()
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #("name", json.string("custom-name")),
+    ])
+
+  let result = package_json.generate(gleam, talc) |> expect.to_be_ok()
+  result |> string_contains("\"name\":\"custom-name\"") |> expect.to_be_true()
+  result |> string_contains("\"name\":\"my_lib\"") |> expect.to_be_false()
+}
+
+pub fn extra_fields_array_values_test() {
+  let gleam = test_gleam_config()
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #(
+        "keywords",
+        json.preprocessed_array([json.string("gleam"), json.string("beam")]),
+      ),
+    ])
+
+  let result = package_json.generate(gleam, talc) |> expect.to_be_ok()
+  result |> string_contains("\"keywords\"") |> expect.to_be_true()
+  result |> string_contains("\"gleam\"") |> expect.to_be_true()
+  result |> string_contains("\"beam\"") |> expect.to_be_true()
+}
+
+pub fn extra_fields_boolean_values_test() {
+  let gleam = test_gleam_config()
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #("private", json.bool(True)),
+    ])
+
+  let result = package_json.generate(gleam, talc) |> expect.to_be_ok()
+  result |> string_contains("\"private\":true") |> expect.to_be_true()
+}
+
+pub fn extra_fields_nested_object_test() {
+  let gleam = test_gleam_config()
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #(
+        "author",
+        json.object([
+          #("name", json.string("Test Author")),
+          #("email", json.string("test@example.com")),
+        ]),
+      ),
+    ])
+
+  let result = package_json.generate(gleam, talc) |> expect.to_be_ok()
+  result |> string_contains("\"author\"") |> expect.to_be_true()
+  result |> string_contains("\"Test Author\"") |> expect.to_be_true()
 }

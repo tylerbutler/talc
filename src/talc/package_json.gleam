@@ -1,7 +1,8 @@
 /// Generation of `package.json` content from Gleam project metadata.
 ///
-/// This module takes parsed `gleam.toml` and optional `talc.toml` configuration
+/// This module takes parsed `gleam.toml` and optional `talc.ccl` configuration
 /// and produces a well-formed `package.json` string suitable for npm publishing.
+import gleam/dict
 import gleam/int
 import gleam/json
 import gleam/list
@@ -56,16 +57,24 @@ pub fn generate_with_modules(
   let extra_fields = build_extra_fields(talc_config)
   let peer_dep_fields = build_peer_dep_fields(talc_config)
 
-  let all_fields =
+  // Extra fields from [package.json] override auto-generated fields
+  let extra_keys =
+    extra_fields
+    |> list.map(fn(pair) { #(pair.0, Nil) })
+    |> dict.from_list()
+
+  let auto_fields =
     list.flatten([
       base_fields,
       description_fields,
       license_fields,
       esm_fields,
       repository_fields,
-      extra_fields,
       peer_dep_fields,
     ])
+    |> list.filter(fn(pair) { !dict.has_key(extra_keys, pair.0) })
+
+  let all_fields = list.flatten([auto_fields, extra_fields])
 
   Ok(json.to_string(json.object(all_fields)))
 }
@@ -162,13 +171,12 @@ fn repository_url(repo: gleam_toml.Repository) -> String {
   }
 }
 
-/// Builds extra package.json fields from talc.toml overrides.
+/// Builds extra package.json fields from talc.ccl overrides.
 fn build_extra_fields(config: TalcConfig) -> List(#(String, json.Json)) {
   config.extra_fields
-  |> list.map(fn(pair) { #(pair.0, json.string(pair.1)) })
 }
 
-/// Builds peerDependencies field from talc.toml.
+/// Builds peerDependencies field from talc.ccl.
 fn build_peer_dep_fields(config: TalcConfig) -> List(#(String, json.Json)) {
   case config.peer_dependencies {
     [] -> []

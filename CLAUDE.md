@@ -42,7 +42,7 @@ src/
 ├── talc_npm_ffi.erl         # Erlang FFI: npm pack/publish
 └── talc/
     ├── gleam_toml.gleam     # gleam.toml parser → GleamConfig
-    ├── talc_config.gleam    # talc.toml parser → TalcConfig
+    ├── talc_config.gleam    # talc.ccl parser → TalcConfig
     ├── package_json.gleam   # package.json generation with sub-path exports
     ├── output.gleam         # File I/O: write output dir, copy .mjs, write .d.ts
     ├── interface.gleam      # Package interface loader (gleam CLI → gleam_package_interface)
@@ -52,7 +52,7 @@ src/
 test/
 ├── talc_test.gleam          # Test runner entry point
 ├── gleam_toml_test.gleam    # gleam.toml parsing tests
-├── talc_config_test.gleam   # talc.toml parsing tests
+├── talc_config_test.gleam   # talc.ccl parsing tests
 ├── package_json_test.gleam  # JSON generation tests
 ├── typescript_test.gleam    # Type mapping tests
 ├── dts_test.gleam           # .d.ts emission tests
@@ -93,7 +93,8 @@ case result {
 
 ### Runtime
 - `gleam_stdlib` - Standard library
-- `tom` - TOML parser (for gleam.toml and talc.toml)
+- `tom` - TOML parser (for gleam.toml)
+- `ccl_test_runner` - CCL parser (for talc.ccl)
 - `simplifile` - Filesystem operations
 - `gleam_json` - JSON serialization
 - `glint` - CLI framework
