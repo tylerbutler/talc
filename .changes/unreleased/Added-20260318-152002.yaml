@@ -1,0 +1,7 @@
+kind: Added
+body: |-
+    Forward JSDoc documentation into generated .d.ts files
+    Gleam /// doc comments are now emitted as JSDoc above type and function
+    declarations. Single-line docs use compact format; multi-line docs use
+    block format. Constructor-level docs are included for ADT variants.
+time: 2026-03-18T15:20:02.373997581-07:00
