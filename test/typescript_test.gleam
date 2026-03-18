@@ -116,7 +116,7 @@ pub fn dynamic_type_test() {
       ctx,
       Named("Dynamic", "gleam_stdlib", "gleam/dynamic", []),
     )
-  ts |> expect.to_equal("unknown")
+  ts |> expect.to_equal("unknown /* gleam.Dynamic */")
 }
 
 pub fn variable_type_test() {

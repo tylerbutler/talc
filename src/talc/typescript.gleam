@@ -256,7 +256,8 @@ fn named_type_to_ts(
     }
 
     // Dynamic
-    "gleam_stdlib", "gleam/dynamic", "Dynamic" -> #("unknown", ctx)
+    "gleam_stdlib", "gleam/dynamic", "Dynamic" ->
+      #("unknown /* gleam.Dynamic */", ctx)
 
     // Order (from gleam_stdlib)
     "gleam_stdlib", "gleam/order", "Order" -> #("\"Lt\" | \"Eq\" | \"Gt\"", ctx)
