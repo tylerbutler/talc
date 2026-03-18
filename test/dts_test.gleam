@@ -358,3 +358,214 @@ pub fn emit_cross_module_imports_test() {
   |> string.contains("import type { Handler } from \"./util.js\";")
   |> expect.to_be_true()
 }
+
+pub fn emit_function_with_single_line_doc_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "add",
+          Function(
+            documentation: Some("Adds two integers together."),
+            deprecation: None,
+            implementations: test_implementations(),
+            parameters: [
+              Parameter(
+                label: Some("a"),
+                type_: package_interface.Named("Int", "", "gleam", []),
+              ),
+              Parameter(
+                label: Some("b"),
+                type_: package_interface.Named("Int", "", "gleam", []),
+              ),
+            ],
+            return: package_interface.Named("Int", "", "gleam", []),
+          ),
+        ),
+      ]),
+    )
+
+  let result = dts.emit_module(module, "test", "test_module")
+  result.content
+  |> string.contains("/** Adds two integers together. */\n")
+  |> expect.to_be_true()
+  result.content
+  |> string.contains(
+    "export declare function add(a: number, b: number): number;",
+  )
+  |> expect.to_be_true()
+}
+
+pub fn emit_function_with_multi_line_doc_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "greet",
+          Function(
+            documentation: Some("Greets a person.\nReturns a friendly message."),
+            deprecation: None,
+            implementations: test_implementations(),
+            parameters: [
+              Parameter(
+                label: Some("name"),
+                type_: package_interface.Named("String", "", "gleam", []),
+              ),
+            ],
+            return: package_interface.Named("String", "", "gleam", []),
+          ),
+        ),
+      ]),
+    )
+
+  let result = dts.emit_module(module, "test", "test_module")
+  result.content
+  |> string.contains(
+    "/**\n * Greets a person.\n * Returns a friendly message.\n */\n",
+  )
+  |> expect.to_be_true()
+}
+
+pub fn emit_record_type_with_doc_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      types: dict.from_list([
+        #(
+          "Person",
+          TypeDefinition(
+            documentation: Some("Represents a person with a name and age."),
+            deprecation: None,
+            parameters: 0,
+            constructors: [
+              TypeConstructor(documentation: None, name: "Person", parameters: [
+                Parameter(
+                  label: Some("name"),
+                  type_: package_interface.Named("String", "", "gleam", []),
+                ),
+                Parameter(
+                  label: Some("age"),
+                  type_: package_interface.Named("Int", "", "gleam", []),
+                ),
+              ]),
+            ],
+          ),
+        ),
+      ]),
+    )
+
+  let result = dts.emit_module(module, "test", "test_module")
+  result.content
+  |> string.contains(
+    "/** Represents a person with a name and age. */\nexport interface Person",
+  )
+  |> expect.to_be_true()
+}
+
+pub fn emit_adt_type_with_docs_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      types: dict.from_list([
+        #(
+          "Shape",
+          TypeDefinition(
+            documentation: Some("A geometric shape."),
+            deprecation: None,
+            parameters: 0,
+            constructors: [
+              TypeConstructor(
+                documentation: Some("A circle with a radius."),
+                name: "Circle",
+                parameters: [
+                  Parameter(
+                    label: Some("radius"),
+                    type_: package_interface.Named("Float", "", "gleam", []),
+                  ),
+                ],
+              ),
+              TypeConstructor(
+                documentation: Some("A rectangle with width and height."),
+                name: "Rectangle",
+                parameters: [
+                  Parameter(
+                    label: Some("width"),
+                    type_: package_interface.Named("Float", "", "gleam", []),
+                  ),
+                  Parameter(
+                    label: Some("height"),
+                    type_: package_interface.Named("Float", "", "gleam", []),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ]),
+    )
+
+  let result = dts.emit_module(module, "test", "test_module")
+  // Constructor-level docs
+  result.content
+  |> string.contains("/** A circle with a radius. */\nexport interface Circle")
+  |> expect.to_be_true()
+  result.content
+  |> string.contains(
+    "/** A rectangle with width and height. */\nexport interface Rectangle",
+  )
+  |> expect.to_be_true()
+  // Type-level doc on the union
+  result.content
+  |> string.contains("/** A geometric shape. */\nexport type Shape")
+  |> expect.to_be_true()
+}
+
+pub fn emit_opaque_type_with_doc_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      types: dict.from_list([
+        #(
+          "Secret",
+          TypeDefinition(
+            documentation: Some("An opaque secret value."),
+            deprecation: None,
+            parameters: 0,
+            constructors: [],
+          ),
+        ),
+      ]),
+    )
+
+  let result = dts.emit_module(module, "test", "test_module")
+  result.content
+  |> string.contains("/** An opaque secret value. */\nexport type Secret")
+  |> expect.to_be_true()
+}
+
+pub fn emit_no_doc_when_none_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "add",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: test_implementations(),
+            parameters: [],
+            return: package_interface.Named("Nil", "", "gleam", []),
+          ),
+        ),
+      ]),
+    )
+
+  let result = dts.emit_module(module, "test", "test_module")
+  // Should not contain any JSDoc
+  result.content
+  |> string.contains("/**")
+  |> expect.to_be_false()
+}

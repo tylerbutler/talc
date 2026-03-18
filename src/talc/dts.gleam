@@ -174,7 +174,8 @@ fn emit_type_definition(
           let all_fields = [tag_field, ..fields]
 
           let iface =
-            "export interface "
+            doc_comment(constructor.documentation)
+            <> "export interface "
             <> constructor.name
             <> generics
             <> " {\n"
@@ -187,9 +188,10 @@ fn emit_type_definition(
       let constructor_names =
         list.map(constructors, fn(c) { c.name <> generics })
       let union_decl =
-        doc_comment(type_def.documentation)
-        <> string.join(interfaces, "\n\n")
-        <> "\n\nexport type "
+        string.join(interfaces, "\n\n")
+        <> "\n\n"
+        <> doc_comment(type_def.documentation)
+        <> "export type "
         <> name
         <> generics
         <> " = "
@@ -274,17 +276,34 @@ fn type_params_string(count: Int, ctx: TypeContext) -> String {
 }
 
 /// Formats an optional documentation string as a JSDoc comment.
+/// Single-line docs use compact `/** text */` format.
+/// Multi-line docs use block format.
 fn doc_comment(doc: option.Option(String)) -> String {
   case doc {
     None -> ""
     Some(text) -> {
-      let lines = string.split(text, "\n")
-      case lines {
-        [] -> ""
-        _ ->
-          "/**\n"
-          <> string.join(list.map(lines, fn(line) { " *" <> line }), "\n")
-          <> "\n */\n"
+      let trimmed = string.trim_end(text)
+      case trimmed {
+        "" -> ""
+        _ -> {
+          let lines = string.split(trimmed, "\n")
+          case lines {
+            [] -> ""
+            [single] -> "/** " <> string.trim(single) <> " */\n"
+            _ ->
+              "/**\n"
+              <> string.join(
+                list.map(lines, fn(line) {
+                  case string.is_empty(string.trim(line)) {
+                    True -> " *"
+                    False -> " * " <> line
+                  }
+                }),
+                "\n",
+              )
+              <> "\n */\n"
+          }
+        }
       }
     }
   }
