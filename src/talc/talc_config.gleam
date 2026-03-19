@@ -33,6 +33,9 @@ pub type TalcConfig {
     peer_dependencies: List(#(String, String)),
     /// Maps Gleam package names to npm package names for external type resolution.
     type_maps: Dict(String, String),
+    /// When True, generate wrapper modules that convert top-level Result/Option
+    /// to true-myth types. Adds true-myth as a peer dependency.
+    use_true_myth: Bool,
   )
 }
 
@@ -43,6 +46,7 @@ pub fn default() -> TalcConfig {
     extra_fields: [],
     peer_dependencies: [],
     type_maps: dict.new(),
+    use_true_myth: True,
   )
 }
 
@@ -83,12 +87,14 @@ pub fn parse(content: String) -> Result(TalcConfig, String) {
   let extra_fields = parse_extra_fields(ccl)
   let peer_dependencies = parse_peer_dependencies(ccl)
   let type_maps = parse_type_maps(ccl)
+  let use_true_myth = parse_use_true_myth(ccl)
 
   Ok(TalcConfig(
     package: package,
     extra_fields: extra_fields,
     peer_dependencies: peer_dependencies,
     type_maps: type_maps,
+    use_true_myth: use_true_myth,
   ))
 }
 
@@ -184,5 +190,12 @@ fn parse_type_maps(ccl: CCL) -> Dict(String, String) {
       })
       |> dict.from_list()
     _ -> dict.new()
+  }
+}
+
+fn parse_use_true_myth(ccl: CCL) -> Bool {
+  case access.get_string(ccl, ["package", "use_true_myth"]) {
+    Ok("false") -> False
+    _ -> True
   }
 }

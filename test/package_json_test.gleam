@@ -40,7 +40,8 @@ pub fn generate_esm_exports_test() {
 
   let json = package_json.generate(gleam, talc) |> expect.to_be_ok()
   json |> string_contains("./dist/my_lib.mjs") |> expect.to_be_true()
-  json |> string_contains("./dist/my_lib.d.ts") |> expect.to_be_true()
+  // Default config has use_true_myth=true but no wrapped modules → native .d.mts
+  json |> string_contains("./dist/my_lib.d.mts") |> expect.to_be_true()
   json |> string_contains("\"exports\"") |> expect.to_be_true()
 }
 
@@ -222,44 +223,84 @@ pub fn extra_fields_nested_object_test() {
   result |> string_contains("\"Test Author\"") |> expect.to_be_true()
 }
 
-pub fn generate_with_type_map_peer_deps_test() {
+pub fn generate_with_true_myth_peer_deps_test() {
   let gleam = test_gleam_config()
   let talc = test_talc_config()
-  let used = set.from_list(["gleam-json", "@scope/gleam-http"])
+  // Simulate wrapped modules → true-myth should be auto-added
+  let wrapped = set.from_list(["my_lib"])
 
   let result =
-    package_json.generate_with_modules(gleam, talc, [], used)
+    package_json.generate_with_modules(gleam, talc, [], wrapped)
     |> expect.to_be_ok()
   result |> string_contains("\"peerDependencies\"") |> expect.to_be_true()
-  result |> string_contains("\"gleam-json\":\"*\"") |> expect.to_be_true()
-  result
-  |> string_contains("\"@scope/gleam-http\":\"*\"")
-  |> expect.to_be_true()
+  result |> string_contains("\"true-myth\"") |> expect.to_be_true()
 }
 
-pub fn generate_type_map_peer_deps_no_override_explicit_test() {
+pub fn generate_true_myth_peer_deps_no_override_explicit_test() {
   let gleam = test_gleam_config()
   let talc =
     TalcConfig(..test_talc_config(), peer_dependencies: [
-      #("gleam-json", ">=2.0.0"),
+      #("true-myth", ">=9.0.0"),
     ])
-  let used = set.from_list(["gleam-json"])
+  let wrapped = set.from_list(["my_lib"])
 
   let result =
-    package_json.generate_with_modules(gleam, talc, [], used)
+    package_json.generate_with_modules(gleam, talc, [], wrapped)
     |> expect.to_be_ok()
-  // Explicit version should take precedence over "*"
-  result |> string_contains("\"gleam-json\":\">=2.0.0\"") |> expect.to_be_true()
-  result |> string_contains("\"gleam-json\":\"*\"") |> expect.to_be_false()
+  // Explicit version should take precedence over auto-added
+  result
+  |> string_contains("\"true-myth\":\">=9.0.0\"")
+  |> expect.to_be_true()
 }
 
-pub fn generate_no_type_map_peer_deps_when_empty_test() {
+pub fn generate_no_true_myth_peer_deps_when_disabled_test() {
   let gleam = test_gleam_config()
-  let talc = test_talc_config()
-  let used = set.new()
+  let talc = TalcConfig(..test_talc_config(), use_true_myth: False)
+  let wrapped = set.new()
 
   let result =
-    package_json.generate_with_modules(gleam, talc, [], used)
+    package_json.generate_with_modules(gleam, talc, [], wrapped)
+    |> expect.to_be_ok()
+  result |> string_contains("\"true-myth\"") |> expect.to_be_false()
+}
+
+pub fn generate_no_peer_deps_when_no_wrapped_modules_test() {
+  let gleam = test_gleam_config()
+  let talc = test_talc_config()
+  let wrapped = set.new()
+
+  let result =
+    package_json.generate_with_modules(gleam, talc, [], wrapped)
     |> expect.to_be_ok()
   result |> string_contains("\"peerDependencies\"") |> expect.to_be_false()
+}
+
+pub fn generate_wrapper_paths_when_module_wrapped_test() {
+  let gleam = test_gleam_config()
+  let talc = test_talc_config()
+  let wrapped = set.from_list(["my_lib"])
+
+  let result =
+    package_json.generate_with_modules(gleam, talc, ["my_lib"], wrapped)
+    |> expect.to_be_ok()
+  // Wrapper paths should be used for wrapped modules
+  result
+  |> string_contains("./dist/_wrapper/my_lib.mjs")
+  |> expect.to_be_true()
+  result
+  |> string_contains("./dist/_wrapper/my_lib.d.ts")
+  |> expect.to_be_true()
+}
+
+pub fn generate_native_paths_when_not_wrapped_test() {
+  let gleam = test_gleam_config()
+  let talc = TalcConfig(..test_talc_config(), use_true_myth: False)
+  let wrapped = set.new()
+
+  let result =
+    package_json.generate_with_modules(gleam, talc, ["my_lib"], wrapped)
+    |> expect.to_be_ok()
+  // Native paths should be used
+  result |> string_contains("./dist/my_lib.mjs") |> expect.to_be_true()
+  result |> string_contains("./dist/my_lib.d.mts") |> expect.to_be_true()
 }

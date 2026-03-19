@@ -30,11 +30,15 @@ pub fn generate(
 }
 
 /// Generates package.json with sub-path exports for the given modules.
+///
+/// When `use_true_myth` is enabled in config, exports point at wrapper
+/// modules and true-myth is added as a peer dependency.
+/// `wrapped_modules` is the set of module names that have wrapper files.
 pub fn generate_with_modules(
   gleam_config: GleamConfig,
   talc_config: TalcConfig,
   module_names: List(String),
-  used_type_map_packages: Set(String),
+  wrapped_modules: Set(String),
 ) -> Result(String, GenerationError) {
   let npm_name = build_npm_name(gleam_config.name, talc_config)
 
@@ -54,11 +58,21 @@ pub fn generate_with_modules(
     [] -> []
   }
 
-  let esm_fields = build_esm_fields(gleam_config.name, module_names)
+  let esm_fields =
+    build_esm_fields(
+      gleam_config.name,
+      module_names,
+      talc_config.use_true_myth,
+      wrapped_modules,
+    )
   let repository_fields = build_repository_fields(gleam_config)
   let extra_fields = build_extra_fields(talc_config)
   let peer_dep_fields =
-    build_peer_dep_fields(talc_config, used_type_map_packages)
+    build_peer_dep_fields(
+      talc_config,
+      talc_config.use_true_myth,
+      wrapped_modules,
+    )
 
   // Extra fields from [package.json] override auto-generated fields
   let extra_keys =
@@ -91,12 +105,17 @@ fn build_npm_name(name: String, config: TalcConfig) -> String {
 }
 
 /// Builds ESM module entry point fields with sub-path exports.
+///
+/// When `use_true_myth` is true and a module has wrapper files,
+/// exports point at the wrapper; otherwise they point at native Gleam output.
 fn build_esm_fields(
   package_name: String,
   module_names: List(String),
+  use_true_myth: Bool,
+  wrapped_modules: Set(String),
 ) -> List(#(String, json.Json)) {
-  let main_path = "./dist/" <> package_name <> ".mjs"
-  let types_path = "./dist/" <> package_name <> ".d.ts"
+  let #(main_path, types_path) =
+    module_paths(package_name, package_name, use_true_myth, wrapped_modules)
 
   let root_export = #(
     ".",
@@ -115,8 +134,8 @@ fn build_esm_fields(
       let sub_path =
         "./"
         <> string.replace(strip_prefix(module_name, package_name), "/", "/")
-      let mjs_path = "./dist/" <> module_name <> ".mjs"
-      let dts_path = "./dist/" <> module_name <> ".d.ts"
+      let #(mjs_path, dts_path) =
+        module_paths(module_name, package_name, use_true_myth, wrapped_modules)
       #(
         sub_path,
         json.object([
@@ -134,6 +153,25 @@ fn build_esm_fields(
     #("types", json.string(types_path)),
     #("exports", exports),
   ]
+}
+
+/// Returns the (mjs_path, types_path) for a module based on wrapper mode.
+fn module_paths(
+  module_name: String,
+  _package_name: String,
+  use_true_myth: Bool,
+  wrapped_modules: Set(String),
+) -> #(String, String) {
+  case use_true_myth && set.contains(wrapped_modules, module_name) {
+    True -> #(
+      "./dist/_wrapper/" <> module_name <> ".mjs",
+      "./dist/_wrapper/" <> module_name <> ".d.ts",
+    )
+    False -> #(
+      "./dist/" <> module_name <> ".mjs",
+      "./dist/" <> module_name <> ".d.mts",
+    )
+  }
 }
 
 /// Strips the package name prefix from a module name.
@@ -179,24 +217,28 @@ fn build_extra_fields(config: TalcConfig) -> List(#(String, json.Json)) {
   config.extra_fields
 }
 
-/// Builds peerDependencies field from talc.ccl and used type-mapped packages.
-/// Explicitly configured peer dependencies take precedence over auto-added ones.
+/// Builds peerDependencies field from talc.ccl config.
+/// When true-myth wrappers are enabled and any modules were wrapped,
+/// true-myth is automatically added as a peer dependency.
 fn build_peer_dep_fields(
   config: TalcConfig,
-  used_type_map_packages: Set(String),
+  use_true_myth: Bool,
+  wrapped_modules: Set(String),
 ) -> List(#(String, json.Json)) {
-  // Start with explicit peer dependencies
   let explicit_keys =
     config.peer_dependencies
     |> list.map(fn(pair) { pair.0 })
     |> set.from_list()
 
-  // Add type-mapped packages that aren't already explicitly declared
-  let auto_deps =
-    set.to_list(used_type_map_packages)
-    |> list.filter(fn(pkg) { !set.contains(explicit_keys, pkg) })
-    |> list.sort(string.compare)
-    |> list.map(fn(pkg) { #(pkg, "*") })
+  // Auto-add true-myth when enabled and wrappers were generated
+  let auto_deps = case
+    use_true_myth
+    && set.size(wrapped_modules) > 0
+    && !set.contains(explicit_keys, "true-myth")
+  {
+    True -> [#("true-myth", ">=8.0.0")]
+    False -> []
+  }
 
   let all_deps = list.append(config.peer_dependencies, auto_deps)
 

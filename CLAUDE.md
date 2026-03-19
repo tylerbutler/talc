@@ -4,7 +4,19 @@
 
 An npm packaging tool for Gleam libraries, targeting the Erlang (BEAM) runtime. Reads a compiled
 Gleam project and produces a publish-ready npm package directory with a generated `package.json`,
-TypeScript `.d.ts` declarations, and workflow commands (`pack`, `publish`).
+Gleam's native `.d.mts` type declarations, and optional true-myth wrapper modules for
+Result/Option types. Provides workflow commands (`pack`, `publish`).
+
+### Type Strategy
+
+talc uses Gleam's own `.d.mts` files (generated via `[javascript] typescript_declarations = true`
+in `gleam.toml`) as the source of truth for TypeScript types. These are always correct because
+the same compiler produces both the `.mjs` and `.d.mts` files.
+
+When `use_true_myth = true` (the default), talc generates thin wrapper modules that convert
+top-level `Result` and `Option` types to `true-myth` `Result` and `Maybe` types, providing
+a more ergonomic API for TypeScript consumers. The `true-myth` package is automatically added
+as a peer dependency.
 
 ## Build Commands
 
@@ -42,20 +54,22 @@ src/
 ├── talc_npm_ffi.erl         # Erlang FFI: npm pack/publish
 └── talc/
     ├── gleam_toml.gleam     # gleam.toml parser → GleamConfig
-    ├── talc_config.gleam    # talc.ccl parser → TalcConfig
+    ├── talc_config.gleam    # talc.ccl parser → TalcConfig (includes use_true_myth option)
     ├── package_json.gleam   # package.json generation with sub-path exports
-    ├── output.gleam         # File I/O: write output dir, copy .mjs, write .d.ts
+    ├── output.gleam         # File I/O: write output dir, copy .mjs/.d.mts, write wrappers
     ├── interface.gleam      # Package interface loader (gleam CLI → gleam_package_interface)
-    ├── typescript.gleam     # Gleam Type → TypeScript type string mapper
-    ├── dts.gleam            # .d.ts file emitter per module
+    ├── wrapper.gleam        # true-myth wrapper .mjs/.d.ts generator for Result/Option
+    ├── typescript.gleam     # (legacy) Gleam Type → TypeScript type string mapper
+    ├── dts.gleam            # (legacy) .d.ts file emitter per module
     └── npm.gleam            # npm CLI wrapper (pack, publish, flag building)
 test/
 ├── talc_test.gleam          # Test runner entry point
 ├── gleam_toml_test.gleam    # gleam.toml parsing tests
-├── talc_config_test.gleam   # talc.ccl parsing tests
+├── talc_config_test.gleam   # talc.ccl parsing tests (includes use_true_myth)
 ├── package_json_test.gleam  # JSON generation tests
-├── typescript_test.gleam    # Type mapping tests
-├── dts_test.gleam           # .d.ts emission tests
+├── wrapper_test.gleam       # true-myth wrapper generation tests
+├── typescript_test.gleam    # (legacy) Type mapping tests
+├── dts_test.gleam           # (legacy) .d.ts emission tests
 ├── npm_test.gleam           # npm flag building tests
 └── test_helpers.gleam       # Shared test utilities
 ```

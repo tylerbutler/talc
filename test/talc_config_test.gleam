@@ -198,3 +198,33 @@ pub fn default_type_maps_test() {
   let config = talc_config.default()
   config.type_maps |> dict.size() |> expect.to_equal(0)
 }
+
+pub fn default_use_true_myth_test() {
+  let config = talc_config.default()
+  config.use_true_myth |> expect.to_be_true()
+}
+
+pub fn parse_use_true_myth_default_test() {
+  let config = talc_config.parse("") |> expect.to_be_ok()
+  config.use_true_myth |> expect.to_be_true()
+}
+
+pub fn parse_use_true_myth_explicit_true_test() {
+  let ccl =
+    "package =
+  use_true_myth = true
+"
+
+  let config = talc_config.parse(ccl) |> expect.to_be_ok()
+  config.use_true_myth |> expect.to_be_true()
+}
+
+pub fn parse_use_true_myth_false_test() {
+  let ccl =
+    "package =
+  use_true_myth = false
+"
+
+  let config = talc_config.parse(ccl) |> expect.to_be_ok()
+  config.use_true_myth |> expect.to_be_false()
+}
