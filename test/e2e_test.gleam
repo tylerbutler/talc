@@ -74,7 +74,7 @@ fn assert_tsc_validates(package: Package, ts_consumer: String) -> Nil {
   dict.to_list(package.modules)
   |> list.each(fn(pair) {
     let #(module_name, module) = pair
-    let result = dts.emit_module(module, package.name, module_name)
+    let result = dts.emit_module(module, package.name, module_name, dict.new())
     let full_path = dist_dir <> "/" <> interface.module_to_dts_path(module_name)
     let dir = string_before_last(full_path, "/")
     let assert Ok(_) = simplifile.create_directory_all(dir)
@@ -867,7 +867,7 @@ pub fn e2e_jsdoc_forwarding_test() {
       ]),
     )
 
-  let result = dts.emit_module(module, "pkg", "pkg")
+  let result = dts.emit_module(module, "pkg", "pkg", dict.new())
   result.content |> string.contains("/**") |> expect.to_be_true()
   result.content
   |> string.contains("Say hello to someone.")
@@ -947,7 +947,8 @@ pub fn e2e_expected_warnings_test() {
     dict.to_list(package.modules)
     |> list.flat_map(fn(pair) {
       let #(module_name, module) = pair
-      let result = dts.emit_module(module, package.name, module_name)
+      let result =
+        dts.emit_module(module, package.name, module_name, dict.new())
       result.warnings
     })
 

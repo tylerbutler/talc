@@ -7,7 +7,7 @@ import ccl/access
 import ccl/hierarchy
 import ccl/parser
 import ccl/types.{type CCL, type CCLValue, CclList, CclObject, CclString}
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/json
@@ -31,6 +31,8 @@ pub type TalcConfig {
     package: PackageConfig,
     extra_fields: List(#(String, json.Json)),
     peer_dependencies: List(#(String, String)),
+    /// Maps Gleam package names to npm package names for external type resolution.
+    type_maps: Dict(String, String),
   )
 }
 
@@ -40,6 +42,7 @@ pub fn default() -> TalcConfig {
     package: PackageConfig(scope: None, registry: None, output_dir: "npm_dist"),
     extra_fields: [],
     peer_dependencies: [],
+    type_maps: dict.new(),
   )
 }
 
@@ -79,11 +82,13 @@ pub fn parse(content: String) -> Result(TalcConfig, String) {
   let package = parse_package(ccl)
   let extra_fields = parse_extra_fields(ccl)
   let peer_dependencies = parse_peer_dependencies(ccl)
+  let type_maps = parse_type_maps(ccl)
 
   Ok(TalcConfig(
     package: package,
     extra_fields: extra_fields,
     peer_dependencies: peer_dependencies,
+    type_maps: type_maps,
   ))
 }
 
@@ -164,5 +169,20 @@ fn parse_peer_dependencies(ccl: CCL) -> List(#(String, String)) {
         }
       })
     _ -> []
+  }
+}
+
+fn parse_type_maps(ccl: CCL) -> Dict(String, String) {
+  case dict.get(ccl, "types") {
+    Ok(CclObject(table)) ->
+      dict.to_list(table)
+      |> list.filter_map(fn(pair) {
+        case pair {
+          #(key, CclString(value)) -> Ok(#(key, value))
+          _ -> Error(Nil)
+        }
+      })
+      |> dict.from_list()
+    _ -> dict.new()
   }
 }

@@ -1,46 +1,47 @@
+import gleam/dict
 import gleam/list
 import gleam/package_interface.{Fn, Named, Tuple, Variable}
 import startest/expect
 import talc/typescript
 
 pub fn int_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) = typescript.type_to_ts(ctx, Named("Int", "", "gleam", []))
   ts |> expect.to_equal("number")
 }
 
 pub fn float_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) = typescript.type_to_ts(ctx, Named("Float", "", "gleam", []))
   ts |> expect.to_equal("number")
 }
 
 pub fn string_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) = typescript.type_to_ts(ctx, Named("String", "", "gleam", []))
   ts |> expect.to_equal("string")
 }
 
 pub fn bool_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) = typescript.type_to_ts(ctx, Named("Bool", "", "gleam", []))
   ts |> expect.to_equal("boolean")
 }
 
 pub fn nil_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) = typescript.type_to_ts(ctx, Named("Nil", "", "gleam", []))
   ts |> expect.to_equal("undefined")
 }
 
 pub fn bit_array_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) = typescript.type_to_ts(ctx, Named("BitArray", "", "gleam", []))
   ts |> expect.to_equal("Uint8Array")
 }
 
 pub fn list_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -50,14 +51,14 @@ pub fn list_type_test() {
 }
 
 pub fn list_generic_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(ctx, Named("List", "", "gleam", [Variable(1)]))
   ts |> expect.to_equal("Array<A>")
 }
 
 pub fn result_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -73,7 +74,7 @@ pub fn result_type_test() {
 }
 
 pub fn option_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -85,7 +86,7 @@ pub fn option_type_test() {
 }
 
 pub fn dict_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -98,7 +99,7 @@ pub fn dict_type_test() {
 }
 
 pub fn set_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -110,7 +111,7 @@ pub fn set_type_test() {
 }
 
 pub fn dynamic_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -120,7 +121,7 @@ pub fn dynamic_type_test() {
 }
 
 pub fn variable_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts1, ctx) = typescript.type_to_ts(ctx, Variable(1))
   let #(ts2, ctx) = typescript.type_to_ts(ctx, Variable(2))
   let #(ts3, _) = typescript.type_to_ts(ctx, Variable(1))
@@ -130,7 +131,7 @@ pub fn variable_type_test() {
 }
 
 pub fn tuple_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -140,7 +141,7 @@ pub fn tuple_type_test() {
 }
 
 pub fn fn_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -150,13 +151,13 @@ pub fn fn_type_test() {
 }
 
 pub fn fn_generic_type_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, _) = typescript.type_to_ts(ctx, Fn([Variable(1)], Variable(2)))
   ts |> expect.to_equal("(p0: A) => B")
 }
 
 pub fn external_package_type_warning_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(ts, ctx) =
     typescript.type_to_ts(
       ctx,
@@ -167,14 +168,14 @@ pub fn external_package_type_warning_test() {
 }
 
 pub fn same_package_type_test() {
-  let ctx = typescript.new_context("mylib", "mylib_module")
+  let ctx = typescript.new_context("mylib", "mylib_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(ctx, Named("MyType", "mylib", "mylib/types", []))
   ts |> expect.to_equal("MyType")
 }
 
 pub fn same_package_generic_type_test() {
-  let ctx = typescript.new_context("mylib", "mylib_module")
+  let ctx = typescript.new_context("mylib", "mylib_module", dict.new())
   let #(ts, _) =
     typescript.type_to_ts(
       ctx,
@@ -184,12 +185,12 @@ pub fn same_package_generic_type_test() {
 }
 
 pub fn generics_string_empty_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   typescript.generics_string(ctx) |> expect.to_equal("")
 }
 
 pub fn generics_string_with_vars_test() {
-  let ctx = typescript.new_context("test", "test_module")
+  let ctx = typescript.new_context("test", "test_module", dict.new())
   let #(_, ctx) = typescript.type_to_ts(ctx, Variable(1))
   let #(_, ctx) = typescript.type_to_ts(ctx, Variable(2))
   typescript.generics_string(ctx) |> expect.to_equal("<A, B>")
@@ -217,4 +218,52 @@ pub fn relative_import_path_deep_to_root_test() {
   // birch/handler → _gleam (up one level)
   typescript.relative_import_path("birch/handler", "_gleam")
   |> expect.to_equal("../_gleam.js")
+}
+
+pub fn type_map_resolves_external_type_test() {
+  let type_maps = dict.from_list([#("gleam_json", "gleam-json")])
+  let ctx = typescript.new_context("test", "test_module", type_maps)
+  let #(ts, ctx) =
+    typescript.type_to_ts(ctx, Named("Json", "gleam_json", "gleam/json", []))
+  ts |> expect.to_equal("Json")
+  list.length(ctx.warnings) |> expect.to_equal(0)
+  // Should track external import
+  dict.size(ctx.external_imports) |> expect.to_equal(1)
+}
+
+pub fn type_map_resolves_generic_external_type_test() {
+  let type_maps = dict.from_list([#("some_lib", "some-lib")])
+  let ctx = typescript.new_context("test", "test_module", type_maps)
+  let #(ts, ctx) =
+    typescript.type_to_ts(
+      ctx,
+      Named("Container", "some_lib", "some/types", [
+        Named("Int", "", "gleam", []),
+      ]),
+    )
+  ts |> expect.to_equal("Container<number>")
+  list.length(ctx.warnings) |> expect.to_equal(0)
+}
+
+pub fn type_map_unmapped_still_unknown_test() {
+  let type_maps = dict.from_list([#("gleam_json", "gleam-json")])
+  let ctx = typescript.new_context("test", "test_module", type_maps)
+  let #(ts, ctx) =
+    typescript.type_to_ts(
+      ctx,
+      Named("Something", "unmapped_pkg", "unmapped/mod", []),
+    )
+  ts |> expect.to_equal("unknown")
+  list.length(ctx.warnings) |> expect.to_equal(1)
+}
+
+pub fn type_map_scoped_npm_package_test() {
+  let type_maps = dict.from_list([#("gleam_http", "@example/gleam-http")])
+  let ctx = typescript.new_context("test", "test_module", type_maps)
+  let #(ts, ctx) =
+    typescript.type_to_ts(ctx, Named("Request", "gleam_http", "gleam/http", []))
+  ts |> expect.to_equal("Request")
+  // Check the import path includes the scoped package
+  dict.has_key(ctx.external_imports, "@example/gleam-http/gleam/http.js")
+  |> expect.to_be_true()
 }

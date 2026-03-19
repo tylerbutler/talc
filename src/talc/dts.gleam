@@ -3,7 +3,7 @@
 /// This module takes a parsed Gleam module from the package interface
 /// and emits TypeScript declaration strings suitable for writing to
 /// `.d.ts` files.
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -19,6 +19,8 @@ pub type EmitResult {
     content: String,
     /// Warnings encountered during emission
     warnings: List(String),
+    /// npm package names that were referenced via type maps
+    used_type_map_packages: Set(String),
   )
 }
 
@@ -27,8 +29,9 @@ pub fn emit_module(
   module: Module,
   package_name: String,
   module_name: String,
+  type_maps: Dict(String, String),
 ) -> EmitResult {
-  let ctx = typescript.new_context(package_name, module_name)
+  let ctx = typescript.new_context(package_name, module_name, type_maps)
 
   // Emit type definitions (records, ADTs, opaque)
   let #(type_decls, ctx) =
@@ -77,13 +80,41 @@ pub fn emit_module(
       <> "\";"
     })
 
+  // Build import statements for external package type references
+  let external_import_stmts =
+    dict.to_list(ctx.external_imports)
+    |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+    |> list.map(fn(pair) {
+      let #(import_path, names) = pair
+      let sorted_names =
+        set.to_list(names)
+        |> list.sort(string.compare)
+      "import type { "
+      <> string.join(sorted_names, ", ")
+      <> " } from \""
+      <> import_path
+      <> "\";"
+    })
+
+  // Collect the npm package names that were actually used
+  let used_packages =
+    dict.keys(ctx.external_imports)
+    |> list.map(fn(import_path) {
+      // Extract npm package name from import path like "gleam-json/gleam/json.js"
+      // Scoped: "@scope/pkg/module.js" → "@scope/pkg"
+      // Unscoped: "pkg/module.js" → "pkg"
+      extract_npm_package(import_path)
+    })
+    |> set.from_list()
+
   // Build the gleam type symbol declaration if ADTs were emitted
   let symbol_decl = case ctx.needs_gleam_type_symbol {
     True -> ["declare const $type: unique symbol;"]
     False -> []
   }
 
-  let preamble = list.append(import_stmts, symbol_decl)
+  let preamble =
+    list.flatten([import_stmts, external_import_stmts, symbol_decl])
   let preamble_str = case preamble {
     [] -> ""
     _ -> string.join(preamble, "\n") <> "\n\n"
@@ -91,7 +122,11 @@ pub fn emit_module(
 
   let content = preamble_str <> string.join(all_decls, "\n\n") <> "\n"
 
-  EmitResult(content: content, warnings: ctx.warnings)
+  EmitResult(
+    content: content,
+    warnings: ctx.warnings,
+    used_type_map_packages: used_packages,
+  )
 }
 
 /// Emits a type definition as TypeScript.
@@ -208,12 +243,14 @@ fn emit_function(
   func: Function,
 ) -> #(String, TypeContext) {
   // Create a fresh context for this function's generics
-  let fn_ctx = typescript.new_context(ctx.package_name, ctx.current_module)
+  let fn_ctx =
+    typescript.new_context(ctx.package_name, ctx.current_module, ctx.type_maps)
   let fn_ctx =
     typescript.TypeContext(
       ..fn_ctx,
       warnings: ctx.warnings,
       imports: ctx.imports,
+      external_imports: ctx.external_imports,
     )
   let fn_ctx = typescript.scan_function(fn_ctx, func.parameters, func.return)
 
@@ -244,12 +281,13 @@ fn emit_function(
     <> return_ts
     <> ";"
 
-  // Carry warnings and imports back to the main context
+  // Carry warnings, imports, and external imports back to the main context
   let ctx =
     typescript.TypeContext(
       ..ctx,
       warnings: fn_ctx.warnings,
       imports: fn_ctx.imports,
+      external_imports: fn_ctx.external_imports,
     )
   #(decl, ctx)
 }
@@ -312,5 +350,27 @@ fn escape_js_name(name: String) -> String {
   case set.contains(js_reserved_words(), name) {
     True -> name <> "$"
     False -> name
+  }
+}
+
+/// Extracts the npm package name from an import path.
+/// "@scope/pkg/gleam/module.js" → "@scope/pkg"
+/// "pkg/gleam/module.js" → "pkg"
+fn extract_npm_package(import_path: String) -> String {
+  case string.starts_with(import_path, "@") {
+    True -> {
+      // Scoped package: take "@scope/pkg" (first two segments)
+      case string.split(import_path, "/") {
+        [scope, pkg, ..] -> scope <> "/" <> pkg
+        _ -> import_path
+      }
+    }
+    False -> {
+      // Unscoped package: take first segment
+      case string.split(import_path, "/") {
+        [pkg, ..] -> pkg
+        _ -> import_path
+      }
+    }
   }
 }

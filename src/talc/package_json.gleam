@@ -7,6 +7,7 @@ import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set.{type Set}
 import gleam/string
 import talc/gleam_toml.{type GleamConfig}
 import talc/talc_config.{type TalcConfig}
@@ -25,7 +26,7 @@ pub fn generate(
   gleam_config: GleamConfig,
   talc_config: TalcConfig,
 ) -> Result(String, GenerationError) {
-  generate_with_modules(gleam_config, talc_config, [])
+  generate_with_modules(gleam_config, talc_config, [], set.new())
 }
 
 /// Generates package.json with sub-path exports for the given modules.
@@ -33,6 +34,7 @@ pub fn generate_with_modules(
   gleam_config: GleamConfig,
   talc_config: TalcConfig,
   module_names: List(String),
+  used_type_map_packages: Set(String),
 ) -> Result(String, GenerationError) {
   let npm_name = build_npm_name(gleam_config.name, talc_config)
 
@@ -55,7 +57,8 @@ pub fn generate_with_modules(
   let esm_fields = build_esm_fields(gleam_config.name, module_names)
   let repository_fields = build_repository_fields(gleam_config)
   let extra_fields = build_extra_fields(talc_config)
-  let peer_dep_fields = build_peer_dep_fields(talc_config)
+  let peer_dep_fields =
+    build_peer_dep_fields(talc_config, used_type_map_packages)
 
   // Extra fields from [package.json] override auto-generated fields
   let extra_keys =
@@ -176,9 +179,28 @@ fn build_extra_fields(config: TalcConfig) -> List(#(String, json.Json)) {
   config.extra_fields
 }
 
-/// Builds peerDependencies field from talc.ccl.
-fn build_peer_dep_fields(config: TalcConfig) -> List(#(String, json.Json)) {
-  case config.peer_dependencies {
+/// Builds peerDependencies field from talc.ccl and used type-mapped packages.
+/// Explicitly configured peer dependencies take precedence over auto-added ones.
+fn build_peer_dep_fields(
+  config: TalcConfig,
+  used_type_map_packages: Set(String),
+) -> List(#(String, json.Json)) {
+  // Start with explicit peer dependencies
+  let explicit_keys =
+    config.peer_dependencies
+    |> list.map(fn(pair) { pair.0 })
+    |> set.from_list()
+
+  // Add type-mapped packages that aren't already explicitly declared
+  let auto_deps =
+    set.to_list(used_type_map_packages)
+    |> list.filter(fn(pkg) { !set.contains(explicit_keys, pkg) })
+    |> list.sort(string.compare)
+    |> list.map(fn(pkg) { #(pkg, "*") })
+
+  let all_deps = list.append(config.peer_dependencies, auto_deps)
+
+  case all_deps {
     [] -> []
     deps -> {
       let dep_object =

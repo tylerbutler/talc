@@ -29,11 +29,19 @@ pub type TypeContext {
     imports: Dict(String, Set(String)),
     /// Whether any ADT discriminant tag was emitted (needs $type symbol)
     needs_gleam_type_symbol: Bool,
+    /// Maps Gleam package names → npm package names for external type resolution
+    type_maps: Dict(String, String),
+    /// External package imports: maps npm import specifier → set of type names
+    external_imports: Dict(String, Set(String)),
   )
 }
 
 /// Creates a new TypeContext for a given package and module.
-pub fn new_context(package_name: String, current_module: String) -> TypeContext {
+pub fn new_context(
+  package_name: String,
+  current_module: String,
+  type_maps: Dict(String, String),
+) -> TypeContext {
   TypeContext(
     variables: dict.new(),
     next_var: 0,
@@ -42,6 +50,8 @@ pub fn new_context(package_name: String, current_module: String) -> TypeContext 
     current_module: current_module,
     imports: dict.new(),
     needs_gleam_type_symbol: False,
+    type_maps: type_maps,
+    external_imports: dict.new(),
   )
 }
 
@@ -256,8 +266,10 @@ fn named_type_to_ts(
     }
 
     // Dynamic
-    "gleam_stdlib", "gleam/dynamic", "Dynamic" ->
-      #("unknown /* gleam.Dynamic */", ctx)
+    "gleam_stdlib", "gleam/dynamic", "Dynamic" -> #(
+      "unknown /* gleam.Dynamic */",
+      ctx,
+    )
 
     // Order (from gleam_stdlib)
     "gleam_stdlib", "gleam/order", "Order" -> #("\"Lt\" | \"Eq\" | \"Gt\"", ctx)
@@ -277,17 +289,32 @@ fn named_type_to_ts(
       }
     }
 
-    // External package types → unknown with warning
+    // External package types — try type_maps lookup, else unknown
     _, _, _ -> {
-      let warning =
-        "Cannot map type "
-        <> module
-        <> "."
-        <> name
-        <> " from package "
-        <> package
-        <> " — emitting as unknown"
-      #("unknown", add_warning(ctx, warning))
+      case dict.get(ctx.type_maps, package) {
+        Ok(npm_package) -> {
+          let import_path = npm_package <> "/" <> module <> ".js"
+          let ctx = add_external_import(ctx, import_path, name)
+          case parameters {
+            [] -> #(name, ctx)
+            params -> {
+              let #(param_types, ctx) = map_types(ctx, params)
+              #(name <> "<" <> string.join(param_types, ", ") <> ">", ctx)
+            }
+          }
+        }
+        Error(_) -> {
+          let warning =
+            "Cannot map type "
+            <> module
+            <> "."
+            <> name
+            <> " from package "
+            <> package
+            <> " — emitting as unknown"
+          #("unknown", add_warning(ctx, warning))
+        }
+      }
     }
   }
 }
@@ -336,6 +363,26 @@ fn add_import(
   TypeContext(
     ..ctx,
     imports: dict.insert(ctx.imports, module, set.insert(existing, type_name)),
+  )
+}
+
+/// Records that a type needs to be imported from an external npm package.
+fn add_external_import(
+  ctx: TypeContext,
+  import_path: String,
+  type_name: String,
+) -> TypeContext {
+  let existing = case dict.get(ctx.external_imports, import_path) {
+    Ok(names) -> names
+    Error(_) -> set.new()
+  }
+  TypeContext(
+    ..ctx,
+    external_imports: dict.insert(
+      ctx.external_imports,
+      import_path,
+      set.insert(existing, type_name),
+    ),
   )
 }
 

@@ -9,6 +9,7 @@ import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set
 import glint
 import talc/dts
 import talc/gleam_toml
@@ -189,29 +190,37 @@ fn run_generate(
 
   let module_names = interface.public_module_names(package)
 
+  // Generate .d.ts files for each module
+  let #(dts_files, all_warnings, all_used_packages) =
+    dict.to_list(package.modules)
+    |> list.fold(#([], [], set.new()), fn(acc, pair) {
+      let #(files, warnings, used_packages) = acc
+      let #(module_name, module) = pair
+      let result =
+        dts.emit_module(
+          module,
+          package.name,
+          module_name,
+          effective_talc.type_maps,
+        )
+      let dts_path = interface.module_to_dts_path(module_name)
+      #(
+        list.append(files, [#(dts_path, result.content)]),
+        list.append(warnings, result.warnings),
+        set.union(used_packages, result.used_type_map_packages),
+      )
+    })
+
   // Generate package.json with sub-path exports
   use json_str <- try_with_message(
     package_json.generate_with_modules(
       gleam_config,
       effective_talc,
       module_names,
+      all_used_packages,
     ),
     generation_error_to_string,
   )
-
-  // Generate .d.ts files for each module
-  let #(dts_files, all_warnings) =
-    dict.to_list(package.modules)
-    |> list.fold(#([], []), fn(acc, pair) {
-      let #(files, warnings) = acc
-      let #(module_name, module) = pair
-      let result = dts.emit_module(module, package.name, module_name)
-      let dts_path = interface.module_to_dts_path(module_name)
-      #(
-        list.append(files, [#(dts_path, result.content)]),
-        list.append(warnings, result.warnings),
-      )
-    })
 
   // Write output
   use written <- try_ok(

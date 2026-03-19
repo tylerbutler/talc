@@ -1,5 +1,6 @@
 import gleam/json
 import gleam/option.{None, Some}
+import gleam/set
 import gleam/string
 import startest/expect
 import talc/gleam_toml.{type GleamConfig, GleamConfig, Repository}
@@ -219,4 +220,46 @@ pub fn extra_fields_nested_object_test() {
   let result = package_json.generate(gleam, talc) |> expect.to_be_ok()
   result |> string_contains("\"author\"") |> expect.to_be_true()
   result |> string_contains("\"Test Author\"") |> expect.to_be_true()
+}
+
+pub fn generate_with_type_map_peer_deps_test() {
+  let gleam = test_gleam_config()
+  let talc = test_talc_config()
+  let used = set.from_list(["gleam-json", "@scope/gleam-http"])
+
+  let result =
+    package_json.generate_with_modules(gleam, talc, [], used)
+    |> expect.to_be_ok()
+  result |> string_contains("\"peerDependencies\"") |> expect.to_be_true()
+  result |> string_contains("\"gleam-json\":\"*\"") |> expect.to_be_true()
+  result
+  |> string_contains("\"@scope/gleam-http\":\"*\"")
+  |> expect.to_be_true()
+}
+
+pub fn generate_type_map_peer_deps_no_override_explicit_test() {
+  let gleam = test_gleam_config()
+  let talc =
+    TalcConfig(..test_talc_config(), peer_dependencies: [
+      #("gleam-json", ">=2.0.0"),
+    ])
+  let used = set.from_list(["gleam-json"])
+
+  let result =
+    package_json.generate_with_modules(gleam, talc, [], used)
+    |> expect.to_be_ok()
+  // Explicit version should take precedence over "*"
+  result |> string_contains("\"gleam-json\":\">=2.0.0\"") |> expect.to_be_true()
+  result |> string_contains("\"gleam-json\":\"*\"") |> expect.to_be_false()
+}
+
+pub fn generate_no_type_map_peer_deps_when_empty_test() {
+  let gleam = test_gleam_config()
+  let talc = test_talc_config()
+  let used = set.new()
+
+  let result =
+    package_json.generate_with_modules(gleam, talc, [], used)
+    |> expect.to_be_ok()
+  result |> string_contains("\"peerDependencies\"") |> expect.to_be_false()
 }
