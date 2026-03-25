@@ -1,3 +1,4 @@
+import gleam/dict
 import gleam/json
 import gleam/option.{None, Some}
 import gleam/string
@@ -169,4 +170,61 @@ peer_dependencies =
   let assert [_] = config.extra_fields
   let assert [_] = config.peer_dependencies
   Nil
+}
+
+pub fn parse_type_maps_test() {
+  let ccl =
+    "types =
+  gleam_json = gleam-json
+  gleam_http = @example/gleam-http
+"
+
+  let config = talc_config.parse(ccl) |> expect.to_be_ok()
+  config.type_maps
+  |> dict.get("gleam_json")
+  |> expect.to_equal(Ok("gleam-json"))
+  config.type_maps
+  |> dict.get("gleam_http")
+  |> expect.to_equal(Ok("@example/gleam-http"))
+  config.type_maps |> dict.size() |> expect.to_equal(2)
+}
+
+pub fn parse_empty_type_maps_test() {
+  let config = talc_config.parse("") |> expect.to_be_ok()
+  config.type_maps |> dict.size() |> expect.to_equal(0)
+}
+
+pub fn default_type_maps_test() {
+  let config = talc_config.default()
+  config.type_maps |> dict.size() |> expect.to_equal(0)
+}
+
+pub fn default_use_true_myth_test() {
+  let config = talc_config.default()
+  config.use_true_myth |> expect.to_be_true()
+}
+
+pub fn parse_use_true_myth_default_test() {
+  let config = talc_config.parse("") |> expect.to_be_ok()
+  config.use_true_myth |> expect.to_be_true()
+}
+
+pub fn parse_use_true_myth_explicit_true_test() {
+  let ccl =
+    "package =
+  use_true_myth = true
+"
+
+  let config = talc_config.parse(ccl) |> expect.to_be_ok()
+  config.use_true_myth |> expect.to_be_true()
+}
+
+pub fn parse_use_true_myth_false_test() {
+  let ccl =
+    "package =
+  use_true_myth = false
+"
+
+  let config = talc_config.parse(ccl) |> expect.to_be_ok()
+  config.use_true_myth |> expect.to_be_false()
 }
