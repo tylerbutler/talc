@@ -171,6 +171,25 @@ peer_dependencies =
   Nil
 }
 
+pub fn default_type_declarations_dir_test() {
+  let config = talc_config.default()
+  config.type_declarations_dir |> expect.to_equal("talc-types")
+}
+
+pub fn parse_type_declarations_dir_test() {
+  let ccl =
+    "type_declarations_dir = custom-types
+"
+
+  let config = talc_config.parse(ccl) |> expect.to_be_ok()
+  config.type_declarations_dir |> expect.to_equal("custom-types")
+}
+
+pub fn parse_empty_type_declarations_dir_test() {
+  let config = talc_config.parse("") |> expect.to_be_ok()
+  config.type_declarations_dir |> expect.to_equal("talc-types")
+}
+
 pub fn default_use_true_myth_test() {
   let config = talc_config.default()
   config.use_true_myth |> expect.to_be_true()
