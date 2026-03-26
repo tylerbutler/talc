@@ -451,6 +451,168 @@ pub fn parameterized_external_type_test() {
   |> expect.to_be_true()
 }
 
+pub fn mixed_prelude_and_external_types_test() {
+  let json_type =
+    Named(
+      name: "Json",
+      package: "gleam_json",
+      module: "gleam/json",
+      parameters: [],
+    )
+  let list_of_json =
+    Named(name: "List", package: "", module: "gleam", parameters: [json_type])
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "parse_all",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("input"), type_: string_type()),
+            ],
+            return: result_type(list_of_json, string_type()),
+          ),
+        ),
+      ]),
+    )
+
+  let available = set.from_list([#("gleam_json", "gleam/json")])
+  let result =
+    wrapper.generate_module_wrapper(module, "my_lib", available)
+  result.has_wrapped_functions |> expect.to_be_true()
+  // Should have both List and Json imports
+  result.dts
+  |> string_contains("import type { List } from \"../gleam.d.mts\"")
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains(
+    "import type { Json } from \"../_types/gleam_json/gleam/json.mjs\"",
+  )
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains("Result<List<Json>, string>")
+  |> expect.to_be_true()
+}
+
+pub fn multiple_external_types_same_module_test() {
+  let json_type =
+    Named(
+      name: "Json",
+      package: "gleam_json",
+      module: "gleam/json",
+      parameters: [],
+    )
+  let decode_error_type =
+    Named(
+      name: "DecodeError",
+      package: "gleam_json",
+      module: "gleam/json",
+      parameters: [],
+    )
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "decode",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("input"), type_: json_type),
+            ],
+            return: result_type(string_type(), decode_error_type),
+          ),
+        ),
+      ]),
+    )
+
+  let available = set.from_list([#("gleam_json", "gleam/json")])
+  let result =
+    wrapper.generate_module_wrapper(module, "my_lib", available)
+  result.has_wrapped_functions |> expect.to_be_true()
+  // Should import both types from same module in one statement
+  result.dts
+  |> string_contains("import type { DecodeError, Json }")
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains("Result<string, DecodeError>")
+  |> expect.to_be_true()
+}
+
+pub fn no_warnings_when_type_resolved_test() {
+  let json_type =
+    Named(
+      name: "Json",
+      package: "gleam_json",
+      module: "gleam/json",
+      parameters: [],
+    )
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "encode",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("value"), type_: string_type()),
+            ],
+            return: result_type(json_type, nil_type()),
+          ),
+        ),
+      ]),
+    )
+
+  let available = set.from_list([#("gleam_json", "gleam/json")])
+  let result =
+    wrapper.generate_module_wrapper(module, "my_lib", available)
+  result.warnings |> expect.to_equal([])
+}
+
+pub fn passthrough_with_external_type_no_warning_test() {
+  // External types in passthrough functions (not wrapped) should not warn
+  let json_type =
+    Named(
+      name: "Json",
+      package: "gleam_json",
+      module: "gleam/json",
+      parameters: [],
+    )
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "make_json",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("value"), type_: string_type()),
+            ],
+            return: json_type,
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper(module, "my_lib", set.new())
+  // Not wrapped (no Result/Option), so no warnings
+  result.has_wrapped_functions |> expect.to_be_false()
+  result.warnings |> expect.to_equal([])
+}
+
 fn string_contains(haystack: String, needle: String) -> Bool {
   string.contains(haystack, needle)
 }
