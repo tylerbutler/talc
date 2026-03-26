@@ -409,6 +409,48 @@ pub fn unresolved_external_type_warning_test() {
   |> expect.to_be_true()
 }
 
+pub fn parameterized_external_type_test() {
+  let subject_type =
+    Named(
+      name: "Subject",
+      package: "gleam_erlang",
+      module: "gleam/erlang/process",
+      parameters: [Variable(id: 1)],
+    )
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "subscribe",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("topic"), type_: string_type()),
+            ],
+            return: result_type(subject_type, nil_type()),
+          ),
+        ),
+      ]),
+    )
+
+  let available =
+    set.from_list([#("gleam_erlang", "gleam/erlang/process")])
+  let result =
+    wrapper.generate_module_wrapper(module, "my_lib", available)
+  result.has_wrapped_functions |> expect.to_be_true()
+  result.dts
+  |> string_contains("Result<Subject<A>, undefined>")
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains(
+    "import type { Subject } from \"../_types/gleam_erlang/gleam/erlang/process.mjs\"",
+  )
+  |> expect.to_be_true()
+}
+
 fn string_contains(haystack: String, needle: String) -> Bool {
   string.contains(haystack, needle)
 }
