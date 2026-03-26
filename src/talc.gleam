@@ -212,10 +212,10 @@ fn run_generate(
                 #(wrapper_dts_path, result.dts),
               ]),
               set.insert(wrapped, module_name),
-              warnings,
+              list.append(warnings, result.warnings),
             )
           }
-          False -> #(files, wrapped, warnings)
+          False -> #(files, wrapped, list.append(warnings, result.warnings))
         }
       })
     }
