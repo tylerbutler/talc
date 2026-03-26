@@ -1,7 +1,8 @@
 /// talc — npm packaging tool for Gleam libraries.
 ///
 /// Reads a compiled Gleam project and produces a publish-ready npm package
-/// directory with a generated `package.json` and `.d.ts` type declarations.
+/// directory with Gleam's native `.d.mts` type declarations and optional
+/// true-myth wrapper modules for Result/Option types.
 import argv
 import gleam/dict
 import gleam/int
@@ -9,21 +10,22 @@ import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set
 import glint
-import talc/dts
 import talc/gleam_toml
 import talc/interface
 import talc/npm
 import talc/output
 import talc/package_json
 import talc/talc_config
+import talc/wrapper
 
 pub fn main() {
   glint.new()
   |> glint.with_name("talc")
   |> glint.global_help(
     "npm packaging tool for Gleam libraries.
-Generates package.json, .d.ts declarations, and assembles npm-ready output from a Gleam project.",
+Copies Gleam's native .d.mts declarations and assembles npm-ready output from a Gleam project.",
   )
   |> glint.add(at: ["generate"], do: generate_command())
   |> glint.add(at: ["check"], do: check_command())
@@ -184,10 +186,40 @@ fn run_generate(
       ),
     )
 
-  // Load package interface for type generation and module filtering
+  // Load package interface for module discovery and function signatures
   use package <- try_ok(interface.load())
 
   let module_names = interface.public_module_names(package)
+
+  // Generate wrapper files if use_true_myth is enabled
+  let #(generated_files, wrapped_modules, all_warnings) = case
+    effective_talc.use_true_myth
+  {
+    True -> {
+      dict.to_list(package.modules)
+      |> list.fold(#([], set.new(), []), fn(acc, pair) {
+        let #(files, wrapped, warnings) = acc
+        let #(module_name, module) = pair
+        let result = wrapper.generate_module_wrapper(module, module_name)
+        case result.has_wrapped_functions {
+          True -> {
+            let wrapper_mjs_path = "_wrapper/" <> module_name <> ".mjs"
+            let wrapper_dts_path = "_wrapper/" <> module_name <> ".d.ts"
+            #(
+              list.append(files, [
+                #(wrapper_mjs_path, result.mjs),
+                #(wrapper_dts_path, result.dts),
+              ]),
+              set.insert(wrapped, module_name),
+              warnings,
+            )
+          }
+          False -> #(files, wrapped, warnings)
+        }
+      })
+    }
+    False -> #([], set.new(), [])
+  }
 
   // Generate package.json with sub-path exports
   use json_str <- try_with_message(
@@ -195,23 +227,10 @@ fn run_generate(
       gleam_config,
       effective_talc,
       module_names,
+      wrapped_modules,
     ),
     generation_error_to_string,
   )
-
-  // Generate .d.ts files for each module
-  let #(dts_files, all_warnings) =
-    dict.to_list(package.modules)
-    |> list.fold(#([], []), fn(acc, pair) {
-      let #(files, warnings) = acc
-      let #(module_name, module) = pair
-      let result = dts.emit_module(module, package.name, module_name)
-      let dts_path = interface.module_to_dts_path(module_name)
-      #(
-        list.append(files, [#(dts_path, result.content)]),
-        list.append(warnings, result.warnings),
-      )
-    })
 
   // Write output
   use written <- try_ok(
@@ -220,7 +239,7 @@ fn run_generate(
       gleam_config.name,
       json_str,
       Some(module_names),
-      dts_files,
+      generated_files,
     )
     |> map_error(output.error_to_string),
   )
