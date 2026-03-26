@@ -11,7 +11,9 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set
+import gleam/string
 import glint
+import simplifile
 import talc/gleam_toml
 import talc/interface
 import talc/npm
@@ -191,16 +193,25 @@ fn run_generate(
 
   let module_names = interface.public_module_names(package)
 
+  let available_type_files =
+    scan_type_declarations(effective_talc.type_declarations_dir)
+
   // Generate wrapper files if use_true_myth is enabled
-  let #(generated_files, wrapped_modules, all_warnings) = case
+  let #(generated_files, wrapped_modules, all_warnings, all_resolved_types) = case
     effective_talc.use_true_myth
   {
     True -> {
       dict.to_list(package.modules)
-      |> list.fold(#([], set.new(), []), fn(acc, pair) {
-        let #(files, wrapped, warnings) = acc
+      |> list.fold(#([], set.new(), [], set.new()), fn(acc, pair) {
+        let #(files, wrapped, warnings, resolved_types) = acc
         let #(module_name, module) = pair
-        let result = wrapper.generate_module_wrapper(module, module_name)
+        let result =
+          wrapper.generate_module_wrapper(
+            module,
+            module_name,
+            available_type_files,
+          )
+        let new_resolved = set.union(resolved_types, result.resolved_type_files)
         case result.has_wrapped_functions {
           True -> {
             let wrapper_mjs_path = "_wrapper/" <> module_name <> ".mjs"
@@ -211,14 +222,20 @@ fn run_generate(
                 #(wrapper_dts_path, result.dts),
               ]),
               set.insert(wrapped, module_name),
-              warnings,
+              list.append(warnings, result.warnings),
+              new_resolved,
             )
           }
-          False -> #(files, wrapped, warnings)
+          False -> #(
+            files,
+            wrapped,
+            list.append(warnings, result.warnings),
+            new_resolved,
+          )
         }
       })
     }
-    False -> #([], set.new(), [])
+    False -> #([], set.new(), [], set.new())
   }
 
   // Generate package.json with sub-path exports
@@ -244,7 +261,17 @@ fn run_generate(
     |> map_error(output.error_to_string),
   )
 
-  Ok(#(written, all_warnings))
+  // Copy referenced type declaration files to output
+  use type_files <- try_ok(
+    output.copy_type_declarations(
+      effective_talc.type_declarations_dir,
+      effective_output_dir,
+      all_resolved_types,
+    )
+    |> map_error(output.error_to_string),
+  )
+
+  Ok(#(list.append(written, type_files), all_warnings))
 }
 
 fn run_pack(
@@ -364,6 +391,44 @@ fn map_error(result: Result(a, e), f: fn(e) -> String) -> Result(a, String) {
   case result {
     Ok(value) -> Ok(value)
     Error(err) -> Error(f(err))
+  }
+}
+
+/// Scans the type declarations directory and returns a set of
+/// available #(package, module) pairs based on .d.ts file existence.
+fn scan_type_declarations(dir: String) -> set.Set(#(String, String)) {
+  case simplifile.is_directory(dir) {
+    Ok(True) -> scan_type_dir_recursive(dir, dir)
+    _ -> set.new()
+  }
+}
+
+fn scan_type_dir_recursive(
+  base_dir: String,
+  current_dir: String,
+) -> set.Set(#(String, String)) {
+  case simplifile.read_directory(current_dir) {
+    Ok(entries) ->
+      list.fold(entries, set.new(), fn(acc, entry) {
+        let path = current_dir <> "/" <> entry
+        case simplifile.is_directory(path) {
+          Ok(True) -> set.union(acc, scan_type_dir_recursive(base_dir, path))
+          _ ->
+            case string.ends_with(entry, ".d.ts") {
+              True -> {
+                let rel = string.drop_start(path, string.length(base_dir) + 1)
+                let module_path = string.drop_end(rel, string.length(".d.ts"))
+                case string.split(module_path, "/") {
+                  [package, ..module_parts] ->
+                    set.insert(acc, #(package, string.join(module_parts, "/")))
+                  _ -> acc
+                }
+              }
+              False -> acc
+            }
+        }
+      })
+    Error(_) -> set.new()
   }
 }
 

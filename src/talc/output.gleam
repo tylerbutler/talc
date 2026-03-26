@@ -4,6 +4,7 @@
 /// writing generated files, and copying source artifacts.
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/set
 import gleam/string
 import simplifile
 
@@ -268,6 +269,44 @@ fn copy_optional_files(output_dir: String) -> List(String) {
         }
       }
       _ -> Error(Nil)
+    }
+  })
+}
+
+/// Copies referenced type declaration .d.ts files to dist/_types/
+/// and generates empty .mjs stubs for TypeScript module resolution.
+pub fn copy_type_declarations(
+  source_dir: String,
+  output_dir: String,
+  referenced_files: set.Set(#(String, String)),
+) -> Result(List(String), OutputError) {
+  let types_dir = output_dir <> "/dist/_types"
+  let pairs = set.to_list(referenced_files)
+
+  list.try_fold(pairs, [], fn(acc, pair) {
+    let #(package, module) = pair
+    let src = source_dir <> "/" <> package <> "/" <> module <> ".d.ts"
+    let dest_dts = types_dir <> "/" <> package <> "/" <> module <> ".d.ts"
+    let dest_mjs = types_dir <> "/" <> package <> "/" <> module <> ".mjs"
+    let dest_dir = string_before_last(dest_dts, "/")
+
+    case simplifile.is_file(src) {
+      Ok(True) -> {
+        use _ <- try_result(
+          simplifile.create_directory_all(dest_dir)
+          |> map_file_error(DirectoryError(dest_dir, _)),
+        )
+        use _ <- try_result(
+          simplifile.copy_file(at: src, to: dest_dts)
+          |> map_file_error(CopyError(src, dest_dts, _)),
+        )
+        use _ <- try_result(
+          simplifile.write(to: dest_mjs, contents: "")
+          |> map_file_error(WriteError(dest_mjs, _)),
+        )
+        Ok(list.append(acc, [dest_dts, dest_mjs]))
+      }
+      _ -> Ok(acc)
     }
   })
 }

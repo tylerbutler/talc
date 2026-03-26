@@ -7,7 +7,7 @@ import ccl/access
 import ccl/hierarchy
 import ccl/parser
 import ccl/types.{type CCL, type CCLValue, CclList, CclObject, CclString}
-import gleam/dict.{type Dict}
+import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/json
@@ -31,8 +31,9 @@ pub type TalcConfig {
     package: PackageConfig,
     extra_fields: List(#(String, json.Json)),
     peer_dependencies: List(#(String, String)),
-    /// Maps Gleam package names to npm package names for external type resolution.
-    type_maps: Dict(String, String),
+    /// Directory to scan for external type declaration files (.d.mts).
+    /// Defaults to "talc-types".
+    type_declarations_dir: String,
     /// When True, generate wrapper modules that convert top-level Result/Option
     /// to true-myth types. Adds true-myth as a peer dependency.
     use_true_myth: Bool,
@@ -45,7 +46,7 @@ pub fn default() -> TalcConfig {
     package: PackageConfig(scope: None, registry: None, output_dir: "npm_dist"),
     extra_fields: [],
     peer_dependencies: [],
-    type_maps: dict.new(),
+    type_declarations_dir: "talc-types",
     use_true_myth: True,
   )
 }
@@ -86,14 +87,14 @@ pub fn parse(content: String) -> Result(TalcConfig, String) {
   let package = parse_package(ccl)
   let extra_fields = parse_extra_fields(ccl)
   let peer_dependencies = parse_peer_dependencies(ccl)
-  let type_maps = parse_type_maps(ccl)
+  let type_declarations_dir = parse_type_declarations_dir(ccl)
   let use_true_myth = parse_use_true_myth(ccl)
 
   Ok(TalcConfig(
     package: package,
     extra_fields: extra_fields,
     peer_dependencies: peer_dependencies,
-    type_maps: type_maps,
+    type_declarations_dir: type_declarations_dir,
     use_true_myth: use_true_myth,
   ))
 }
@@ -178,18 +179,10 @@ fn parse_peer_dependencies(ccl: CCL) -> List(#(String, String)) {
   }
 }
 
-fn parse_type_maps(ccl: CCL) -> Dict(String, String) {
-  case dict.get(ccl, "types") {
-    Ok(CclObject(table)) ->
-      dict.to_list(table)
-      |> list.filter_map(fn(pair) {
-        case pair {
-          #(key, CclString(value)) -> Ok(#(key, value))
-          _ -> Error(Nil)
-        }
-      })
-      |> dict.from_list()
-    _ -> dict.new()
+fn parse_type_declarations_dir(ccl: CCL) -> String {
+  case access.get_string(ccl, ["type_declarations_dir"]) {
+    Ok(s) -> s
+    Error(_) -> "talc-types"
   }
 }
 

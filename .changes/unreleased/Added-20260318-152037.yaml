@@ -1,0 +1,7 @@
+kind: Added
+body: |-
+    External type mappings for better TypeScript types
+    Well-known Gleam ecosystem types (gleam_json, gleam_http, gleam_erlang,
+    gleam_crypto, birl) now resolve to proper TypeScript types instead of
+    unknown. Custom mappings can be registered via add_external_type.
+time: 2026-03-18T15:20:37.014176099-07:00

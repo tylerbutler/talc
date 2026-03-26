@@ -44,30 +44,73 @@ gleam run -m talc -- generate --output-dir my_output
 
 ```
 npm_dist/
-├── package.json         # Generated from gleam.toml
-├── README.md            # Copied from project root (if present)
-├── LICENSE              # Copied from project root (if present)
+├── package.json           # Generated from gleam.toml
+├── README.md              # Copied from project root (if present)
+├── LICENSE                # Copied from project root (if present)
+├── prelude.mjs            # Gleam prelude runtime
+├── prelude.d.mts          # Gleam prelude type declarations
 └── dist/
-    ├── mylib.mjs        # Compiled JS files from build output
-    ├── mylib.d.ts       # Generated TypeScript declarations
-    └── mylib/
-        ├── module.mjs   # Sub-module JS
-        └── module.d.ts  # Sub-module declarations
+    ├── gleam.mjs          # Gleam runtime support
+    ├── gleam.d.mts        # Gleam runtime type declarations
+    ├── mylib.mjs          # Compiled JS (Gleam native)
+    ├── mylib.d.mts        # TypeScript declarations (Gleam native)
+    ├── _wrapper/          # true-myth wrapper modules (if enabled)
+    │   ├── mylib.mjs      # Wrapper JS (Result/Option conversion)
+    │   └── mylib.d.ts     # Wrapper type declarations
+    └── _types/            # External type declarations (if any)
+        └── gleam_json/
+            └── gleam/
+                ├── json.d.ts   # User-provided type declarations
+                └── json.mjs    # Empty stub for module resolution
 ```
 
 ### TypeScript Support
 
-talc automatically generates `.d.ts` files for all public modules using the
-Gleam compiler's package interface. The generated types match Gleam's JavaScript
-runtime representation:
+talc uses Gleam's native `.d.mts` type declarations (generated via
+`typescript_declarations = true` in `gleam.toml`) as the source of truth. When
+`use_true_myth = true` (the default), talc generates thin wrapper modules that
+convert top-level `Result` and `Option` types to `true-myth` `Result` and `Maybe`
+types.
 
-- Primitive types → `number`, `string`, `boolean`, `undefined`
-- `List(a)` → `Array<A>`, `Option(a)` → `A | undefined`
-- `Result(a, e)` → discriminated `{ ok: true; value: A } | { ok: false; error: E }`
-- Record types → TypeScript `interface`
-- ADTs → discriminated unions with `Symbol.for("gleam_type")` tags
-- Generic type parameters → TypeScript generics
-- Multi-module packages → sub-path exports in package.json
+### External Type Declarations
+
+When wrapper `.d.ts` files reference types from external Gleam packages (e.g.,
+`Json` from `gleam_json`), talc needs to know what TypeScript type to use. By
+default, unresolvable types are emitted as `unknown`.
+
+To provide proper types, create a `talc-types/` directory mirroring Gleam's
+`{package}/{module}` structure with standard `.d.ts` files:
+
+```
+talc-types/
+  gleam_json/
+    gleam/
+      json.d.ts
+  gleam_erlang/
+    gleam/
+      erlang/
+        process.d.ts
+  birl/
+    birl.d.ts
+```
+
+Each file exports TypeScript type declarations:
+
+```typescript
+// talc-types/gleam_json/gleam/json.d.ts
+export type Json = string;
+```
+
+```typescript
+// talc-types/gleam_erlang/gleam/erlang/process.d.ts
+export type Subject<T> = { readonly phantom: T };
+```
+
+talc discovers these files at build time and generates proper `import type`
+statements in the wrapper `.d.ts` files. The declaration files are copied into
+the npm output (`dist/_types/`) so the package is self-contained.
+
+Types without matching declaration files emit `unknown` with a warning.
 
 ### Configuration
 
@@ -79,6 +122,14 @@ package =
   scope = @myorg
   output_dir = npm_dist
   registry = https://registry.npmjs.org
+
+/= Directory containing .d.ts type declarations for external types.
+/= Default: talc-types
+type_declarations_dir = talc-types
+
+/= Set to false to disable true-myth wrapper generation.
+/= Default: true
+use_true_myth = true
 
 package.json =
   homepage = https://example.com

@@ -18,6 +18,20 @@ top-level `Result` and `Option` types to `true-myth` `Result` and `Maybe` types,
 a more ergonomic API for TypeScript consumers. The `true-myth` package is automatically added
 as a peer dependency.
 
+### External Type Declarations
+
+When wrapper `.d.ts` files reference types from external Gleam packages, talc resolves them
+using a local type declarations directory (`talc-types/` by default, configurable via
+`type_declarations_dir` in `talc.ccl`). Users place standard `.d.ts` files mirroring Gleam's
+`{package}/{module}` structure. Types without matching declarations fall back to `unknown`.
+
+Resolution chain in `wrapper.gleam`'s `type_to_ts`:
+1. Prelude types → TS primitives
+2. Result → true-myth Result
+3. Option → true-myth Maybe
+4. Type declaration file exists → import from `_types/` dir
+5. No declaration → `unknown`
+
 ## Build Commands
 
 ```bash
@@ -54,9 +68,9 @@ src/
 ├── talc_npm_ffi.erl         # Erlang FFI: npm pack/publish
 └── talc/
     ├── gleam_toml.gleam     # gleam.toml parser → GleamConfig
-    ├── talc_config.gleam    # talc.ccl parser → TalcConfig (includes use_true_myth option)
+    ├── talc_config.gleam    # talc.ccl parser → TalcConfig (use_true_myth, type_declarations_dir)
     ├── package_json.gleam   # package.json generation with sub-path exports
-    ├── output.gleam         # File I/O: write output dir, copy .mjs/.d.mts, write wrappers
+    ├── output.gleam         # File I/O: write output dir, copy .mjs/.d.mts, wrappers, type decls
     ├── interface.gleam      # Package interface loader (gleam CLI → gleam_package_interface)
     ├── wrapper.gleam        # true-myth wrapper .mjs/.d.ts generator for Result/Option
     ├── typescript.gleam     # (legacy) Gleam Type → TypeScript type string mapper

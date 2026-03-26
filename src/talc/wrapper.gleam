@@ -10,6 +10,7 @@ import gleam/option.{None, Some}
 import gleam/package_interface.{
   type Function, type Module, type Type, Fn, Named, Tuple, Variable,
 }
+import gleam/set.{type Set}
 import gleam/string
 
 /// Result of generating wrapper files for a module.
@@ -21,6 +22,10 @@ pub type WrapperResult {
     dts: String,
     /// Whether any functions needed wrapping (if false, module can be skipped)
     has_wrapped_functions: Bool,
+    /// Warnings for external types that have no declaration file
+    warnings: List(String),
+    /// Set of (package, module) pairs for external types that were resolved
+    resolved_type_files: Set(#(String, String)),
   )
 }
 
@@ -32,6 +37,7 @@ pub type WrapperResult {
 pub fn generate_module_wrapper(
   module: Module,
   module_name: String,
+  available_type_files: Set(#(String, String)),
 ) -> WrapperResult {
   let functions =
     dict.to_list(module.functions)
@@ -52,9 +58,63 @@ pub fn generate_module_wrapper(
   let has_wrapped = list.any(analyzed, fn(t) { t.2 })
 
   let mjs = generate_mjs(analyzed, module_name)
-  let dts = generate_dts(analyzed, module_name)
+  let dts = generate_dts(analyzed, module_name, available_type_files)
 
-  WrapperResult(mjs: mjs, dts: dts, has_wrapped_functions: has_wrapped)
+  // Collect all external types from wrapped functions
+  let all_external_types =
+    list.flat_map(analyzed, fn(t) {
+      case t.2 {
+        True -> {
+          let func = t.1
+          list.append(
+            list.flat_map(func.parameters, fn(p) {
+              collect_non_prelude_named_types(p.type_)
+            }),
+            collect_non_prelude_named_types(func.return),
+          )
+        }
+        False -> []
+      }
+    })
+    |> list.unique()
+
+  let resolved_type_files =
+    all_external_types
+    |> list.filter(fn(triple) {
+      let #(p, m, _n) = triple
+      set.contains(available_type_files, #(p, m))
+    })
+    |> list.map(fn(triple) {
+      let #(p, m, _n) = triple
+      #(p, m)
+    })
+    |> list.unique()
+    |> set.from_list()
+
+  let warnings =
+    all_external_types
+    |> list.filter(fn(triple) {
+      let #(p, m, _n) = triple
+      !set.contains(available_type_files, #(p, m))
+    })
+    |> list.map(fn(triple) {
+      let #(p, m, n) = triple
+      "Type "
+      <> n
+      <> " from "
+      <> p
+      <> "/"
+      <> m
+      <> " has no type declaration — emitting as unknown"
+    })
+
+  WrapperResult(
+    mjs: mjs,
+    dts: dts,
+    has_wrapped_functions: has_wrapped,
+    warnings: warnings,
+    resolved_type_files: resolved_type_files,
+  )
 }
 
 /// Checks if a function needs wrapping (has top-level Result or Option).
@@ -250,6 +310,7 @@ fn generate_wrapper_fn_mjs(name: String, func: Function) -> String {
 fn generate_dts(
   functions: List(#(String, Function, Bool)),
   module_name: String,
+  available_type_files: Set(#(String, String)),
 ) -> String {
   let passthrough =
     list.filter(functions, fn(t) { !t.2 })
@@ -283,8 +344,52 @@ fn generate_dts(
     |> list.unique()
     |> list.sort(string.compare)
 
+  // Collect external types from wrapped functions that have declaration files
+  let external_types =
+    list.flat_map(wrapped, fn(t) {
+      let func = t.1
+      list.append(
+        list.flat_map(func.parameters, fn(p) {
+          collect_non_prelude_named_types(p.type_)
+        }),
+        collect_non_prelude_named_types(func.return),
+      )
+    })
+    |> list.filter(fn(triple) {
+      let #(p, m, _n) = triple
+      set.contains(available_type_files, #(p, m))
+    })
+    |> list.unique()
+
+  // Group by (package, module) for import statements
+  let external_imports =
+    external_types
+    |> list.group(fn(triple) {
+      let #(p, m, _n) = triple
+      #(p, m)
+    })
+    |> dict.to_list()
+    |> list.sort(fn(a, b) {
+      string.compare(a.0.0 <> "/" <> a.0.1, b.0.0 <> "/" <> b.0.1)
+    })
+    |> list.map(fn(pair) {
+      let #(#(p, m), types) = pair
+      let names =
+        list.map(types, fn(t) { t.2 })
+        |> list.unique()
+        |> list.sort(string.compare)
+      "import type { "
+      <> string.join(names, ", ")
+      <> " } from \"../_types/"
+      <> p
+      <> "/"
+      <> m
+      <> ".mjs\";"
+    })
+
   // Imports
   let mut_imports = []
+  let mut_imports = list.append(list.reverse(external_imports), mut_imports)
   let mut_imports = case all_wrapped_types {
     [] -> mut_imports
     types -> [
@@ -323,7 +428,7 @@ fn generate_dts(
   let wrapper_decls =
     list.map(wrapped, fn(t) {
       let #(name, func, _) = t
-      generate_wrapper_fn_dts(name, func)
+      generate_wrapper_fn_dts(name, func, available_type_files)
     })
     |> string.join("\n")
 
@@ -335,7 +440,11 @@ fn generate_dts(
   preamble <> reexport <> "\n" <> wrapper_decls
 }
 
-fn generate_wrapper_fn_dts(name: String, func: Function) -> String {
+fn generate_wrapper_fn_dts(
+  name: String,
+  func: Function,
+  available_type_files: Set(#(String, String)),
+) -> String {
   let safe_name = escape_js_reserved(name)
 
   // Collect type variables from the function
@@ -359,10 +468,10 @@ fn generate_wrapper_fn_dts(name: String, func: Function) -> String {
         Some(label) -> escape_js_reserved(label)
         None -> "p" <> gleam_int.to_string(i)
       }
-      param_name <> ": " <> type_to_ts(p.type_, var_map)
+      param_name <> ": " <> type_to_ts(p.type_, var_map, available_type_files)
     })
 
-  let return_ts = type_to_ts(func.return, var_map)
+  let return_ts = type_to_ts(func.return, var_map, available_type_files)
 
   "export declare function "
   <> safe_name
@@ -377,7 +486,11 @@ fn generate_wrapper_fn_dts(name: String, func: Function) -> String {
 /// Maps a Gleam type to its true-myth-aware TypeScript representation.
 /// Result and Option are mapped to true-myth types; everything else uses
 /// basic TypeScript types.
-fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
+fn type_to_ts(
+  t: Type,
+  vars: Dict(Int, String),
+  available_type_files: Set(#(String, String)),
+) -> String {
   case t {
     Named(name: "Int", package: "", module: "gleam", ..) -> "number"
     Named(name: "Float", package: "", module: "gleam", ..) -> "number"
@@ -390,7 +503,7 @@ fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
 
     Named(name: "List", package: "", module: "gleam", parameters: params) ->
       case params {
-        [elem] -> "List<" <> type_to_ts(elem, vars) <> ">"
+        [elem] -> "List<" <> type_to_ts(elem, vars, available_type_files) <> ">"
         _ -> "List<unknown>"
       }
 
@@ -398,9 +511,9 @@ fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
       case params {
         [ok_t, err_t] ->
           "Result<"
-          <> type_to_ts(ok_t, vars)
+          <> type_to_ts(ok_t, vars, available_type_files)
           <> ", "
-          <> type_to_ts(err_t, vars)
+          <> type_to_ts(err_t, vars, available_type_files)
           <> ">"
         _ -> "Result<unknown, unknown>"
       }
@@ -412,7 +525,8 @@ fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
       parameters: params,
     ) ->
       case params {
-        [inner] -> "Maybe<" <> type_to_ts(inner, vars) <> ">"
+        [inner] ->
+          "Maybe<" <> type_to_ts(inner, vars, available_type_files) <> ">"
         _ -> "Maybe<unknown>"
       }
 
@@ -423,26 +537,40 @@ fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
       }
 
     Tuple(elements: elems) -> {
-      let types = list.map(elems, fn(e) { type_to_ts(e, vars) })
+      let types =
+        list.map(elems, fn(e) { type_to_ts(e, vars, available_type_files) })
       "readonly [" <> string.join(types, ", ") <> "]"
     }
 
     Fn(parameters: params, return: ret) -> {
       let param_types =
         list.index_map(params, fn(p, i) {
-          "p" <> gleam_int.to_string(i) <> ": " <> type_to_ts(p, vars)
+          "p"
+          <> gleam_int.to_string(i)
+          <> ": "
+          <> type_to_ts(p, vars, available_type_files)
         })
-      "(" <> string.join(param_types, ", ") <> ") => " <> type_to_ts(ret, vars)
+      "("
+      <> string.join(param_types, ", ")
+      <> ") => "
+      <> type_to_ts(ret, vars, available_type_files)
     }
 
-    // Fallback for other named types — use the type name directly
-    Named(name: n, parameters: params, ..) ->
-      case params {
-        [] -> n
-        ps -> {
-          let type_args = list.map(ps, fn(p) { type_to_ts(p, vars) })
-          n <> "<" <> string.join(type_args, ", ") <> ">"
-        }
+    // Non-prelude named types: check for type declaration file
+    Named(name: n, package: p, module: m, parameters: params) ->
+      case set.contains(available_type_files, #(p, m)) {
+        True ->
+          case params {
+            [] -> n
+            ps -> {
+              let type_args =
+                list.map(ps, fn(param) {
+                  type_to_ts(param, vars, available_type_files)
+                })
+              n <> "<" <> string.join(type_args, ", ") <> ">"
+            }
+          }
+        False -> "unknown"
       }
   }
 }
@@ -505,6 +633,44 @@ fn collect_prelude_types(t: Type) -> List(String) {
         collect_prelude_types(ret),
       )
     Variable(..) -> []
+  }
+}
+
+/// Collects all non-prelude Named types from a type tree.
+/// Returns a list of #(package, module, name) tuples.
+fn collect_non_prelude_named_types(t: Type) -> List(#(String, String, String)) {
+  case t {
+    Named(name: "Int", package: "", module: "gleam", ..)
+    | Named(name: "Float", package: "", module: "gleam", ..)
+    | Named(name: "String", package: "", module: "gleam", ..)
+    | Named(name: "Bool", package: "", module: "gleam", ..)
+    | Named(name: "Nil", package: "", module: "gleam", ..)
+    | Named(name: "BitArray", package: "", module: "gleam", ..)
+    | Named(name: "UtfCodepoint", package: "", module: "gleam", ..)
+    | Named(name: "List", package: "", module: "gleam", ..)
+    | Named(name: "Result", package: "", module: "gleam", ..)
+    | Named(name: "Option", package: "gleam_stdlib", module: "gleam/option", ..) ->
+      list.flat_map(get_type_parameters(t), collect_non_prelude_named_types)
+    Named(name: n, package: p, module: m, parameters: params) -> {
+      let self = [#(p, m, n)]
+      let nested = list.flat_map(params, collect_non_prelude_named_types)
+      list.append(self, nested)
+    }
+    Tuple(elements: elems) ->
+      list.flat_map(elems, collect_non_prelude_named_types)
+    Fn(parameters: params, return: ret) ->
+      list.append(
+        list.flat_map(params, collect_non_prelude_named_types),
+        collect_non_prelude_named_types(ret),
+      )
+    Variable(..) -> []
+  }
+}
+
+fn get_type_parameters(t: Type) -> List(Type) {
+  case t {
+    Named(parameters: params, ..) -> params
+    _ -> []
   }
 }
 
