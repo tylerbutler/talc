@@ -1,4 +1,5 @@
 import gleam/dict
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import gleam/package_interface.{
@@ -330,6 +331,82 @@ pub fn external_type_emits_unknown_test() {
     wrapper.generate_module_wrapper(module, "my_lib", set.new())
   result.has_wrapped_functions |> expect.to_be_true()
   result.dts |> string_contains("Result<unknown, undefined>") |> expect.to_be_true()
+}
+
+pub fn resolved_external_type_import_test() {
+  let json_type =
+    Named(
+      name: "Json",
+      package: "gleam_json",
+      module: "gleam/json",
+      parameters: [],
+    )
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "encode",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("value"), type_: string_type()),
+            ],
+            return: result_type(json_type, nil_type()),
+          ),
+        ),
+      ]),
+    )
+
+  let available = set.from_list([#("gleam_json", "gleam/json")])
+  let result =
+    wrapper.generate_module_wrapper(module, "my_lib", available)
+  result.has_wrapped_functions |> expect.to_be_true()
+  result.dts
+  |> string_contains(
+    "import type { Json } from \"../_types/gleam_json/gleam/json.mjs\"",
+  )
+  |> expect.to_be_true()
+  result.dts |> string_contains("Result<Json, undefined>") |> expect.to_be_true()
+}
+
+pub fn unresolved_external_type_warning_test() {
+  let json_type =
+    Named(
+      name: "Json",
+      package: "gleam_json",
+      module: "gleam/json",
+      parameters: [],
+    )
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "encode",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("value"), type_: string_type()),
+            ],
+            return: result_type(json_type, nil_type()),
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper(module, "my_lib", set.new())
+  result.warnings
+  |> list.any(fn(w) {
+    string.contains(w, "Json")
+    && string.contains(w, "gleam_json")
+  })
+  |> expect.to_be_true()
 }
 
 fn string_contains(haystack: String, needle: String) -> Bool {
