@@ -370,10 +370,7 @@ fn generate_dts(
     })
     |> dict.to_list()
     |> list.sort(fn(a, b) {
-      string.compare(
-        { a.0 }.0 <> "/" <> { a.0 }.1,
-        { b.0 }.0 <> "/" <> { b.0 }.1,
-      )
+      string.compare(a.0.0 <> "/" <> a.0.1, b.0.0 <> "/" <> b.0.1)
     })
     |> list.map(fn(pair) {
       let #(#(p, m), types) = pair
@@ -506,8 +503,7 @@ fn type_to_ts(
 
     Named(name: "List", package: "", module: "gleam", parameters: params) ->
       case params {
-        [elem] ->
-          "List<" <> type_to_ts(elem, vars, available_type_files) <> ">"
+        [elem] -> "List<" <> type_to_ts(elem, vars, available_type_files) <> ">"
         _ -> "List<unknown>"
       }
 
@@ -653,12 +649,7 @@ fn collect_non_prelude_named_types(t: Type) -> List(#(String, String, String)) {
     | Named(name: "UtfCodepoint", package: "", module: "gleam", ..)
     | Named(name: "List", package: "", module: "gleam", ..)
     | Named(name: "Result", package: "", module: "gleam", ..)
-    | Named(
-        name: "Option",
-        package: "gleam_stdlib",
-        module: "gleam/option",
-        ..,
-      ) ->
+    | Named(name: "Option", package: "gleam_stdlib", module: "gleam/option", ..) ->
       list.flat_map(get_type_parameters(t), collect_non_prelude_named_types)
     Named(name: n, package: p, module: m, parameters: params) -> {
       let self = [#(p, m, n)]

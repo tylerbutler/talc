@@ -211,8 +211,7 @@ fn run_generate(
             module_name,
             available_type_files,
           )
-        let new_resolved =
-          set.union(resolved_types, result.resolved_type_files)
+        let new_resolved = set.union(resolved_types, result.resolved_type_files)
         case result.has_wrapped_functions {
           True -> {
             let wrapper_mjs_path = "_wrapper/" <> module_name <> ".mjs"
@@ -227,13 +226,12 @@ fn run_generate(
               new_resolved,
             )
           }
-          False ->
-            #(
-              files,
-              wrapped,
-              list.append(warnings, result.warnings),
-              new_resolved,
-            )
+          False -> #(
+            files,
+            wrapped,
+            list.append(warnings, result.warnings),
+            new_resolved,
+          )
         }
       })
     }
@@ -414,21 +412,15 @@ fn scan_type_dir_recursive(
       list.fold(entries, set.new(), fn(acc, entry) {
         let path = current_dir <> "/" <> entry
         case simplifile.is_directory(path) {
-          Ok(True) ->
-            set.union(acc, scan_type_dir_recursive(base_dir, path))
+          Ok(True) -> set.union(acc, scan_type_dir_recursive(base_dir, path))
           _ ->
             case string.ends_with(entry, ".d.ts") {
               True -> {
-                let rel =
-                  string.drop_start(path, string.length(base_dir) + 1)
-                let module_path =
-                  string.drop_end(rel, string.length(".d.ts"))
+                let rel = string.drop_start(path, string.length(base_dir) + 1)
+                let module_path = string.drop_end(rel, string.length(".d.ts"))
                 case string.split(module_path, "/") {
                   [package, ..module_parts] ->
-                    set.insert(acc, #(
-                      package,
-                      string.join(module_parts, "/"),
-                    ))
+                    set.insert(acc, #(package, string.join(module_parts, "/")))
                   _ -> acc
                 }
               }

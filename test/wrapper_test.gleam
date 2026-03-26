@@ -1,11 +1,11 @@
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/set
 import gleam/package_interface.{
   type Implementations, type Module, Function, Implementations, Module, Named,
   Parameter, Variable,
 }
+import gleam/set
 import gleam/string
 import startest/expect
 import talc/wrapper
@@ -327,10 +327,11 @@ pub fn external_type_emits_unknown_test() {
       ]),
     )
 
-  let result =
-    wrapper.generate_module_wrapper(module, "my_lib", set.new())
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   result.has_wrapped_functions |> expect.to_be_true()
-  result.dts |> string_contains("Result<unknown, undefined>") |> expect.to_be_true()
+  result.dts
+  |> string_contains("Result<unknown, undefined>")
+  |> expect.to_be_true()
 }
 
 pub fn resolved_external_type_import_test() {
@@ -361,15 +362,16 @@ pub fn resolved_external_type_import_test() {
     )
 
   let available = set.from_list([#("gleam_json", "gleam/json")])
-  let result =
-    wrapper.generate_module_wrapper(module, "my_lib", available)
+  let result = wrapper.generate_module_wrapper(module, "my_lib", available)
   result.has_wrapped_functions |> expect.to_be_true()
   result.dts
   |> string_contains(
     "import type { Json } from \"../_types/gleam_json/gleam/json.mjs\"",
   )
   |> expect.to_be_true()
-  result.dts |> string_contains("Result<Json, undefined>") |> expect.to_be_true()
+  result.dts
+  |> string_contains("Result<Json, undefined>")
+  |> expect.to_be_true()
 }
 
 pub fn unresolved_external_type_warning_test() {
@@ -399,12 +401,10 @@ pub fn unresolved_external_type_warning_test() {
       ]),
     )
 
-  let result =
-    wrapper.generate_module_wrapper(module, "my_lib", set.new())
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   result.warnings
   |> list.any(fn(w) {
-    string.contains(w, "Json")
-    && string.contains(w, "gleam_json")
+    string.contains(w, "Json") && string.contains(w, "gleam_json")
   })
   |> expect.to_be_true()
 }
@@ -436,10 +436,8 @@ pub fn parameterized_external_type_test() {
       ]),
     )
 
-  let available =
-    set.from_list([#("gleam_erlang", "gleam/erlang/process")])
-  let result =
-    wrapper.generate_module_wrapper(module, "my_lib", available)
+  let available = set.from_list([#("gleam_erlang", "gleam/erlang/process")])
+  let result = wrapper.generate_module_wrapper(module, "my_lib", available)
   result.has_wrapped_functions |> expect.to_be_true()
   result.dts
   |> string_contains("Result<Subject<A>, undefined>")
@@ -481,8 +479,7 @@ pub fn mixed_prelude_and_external_types_test() {
     )
 
   let available = set.from_list([#("gleam_json", "gleam/json")])
-  let result =
-    wrapper.generate_module_wrapper(module, "my_lib", available)
+  let result = wrapper.generate_module_wrapper(module, "my_lib", available)
   result.has_wrapped_functions |> expect.to_be_true()
   // Should have both List and Json imports
   result.dts
@@ -533,8 +530,7 @@ pub fn multiple_external_types_same_module_test() {
     )
 
   let available = set.from_list([#("gleam_json", "gleam/json")])
-  let result =
-    wrapper.generate_module_wrapper(module, "my_lib", available)
+  let result = wrapper.generate_module_wrapper(module, "my_lib", available)
   result.has_wrapped_functions |> expect.to_be_true()
   // Should import both types from same module in one statement
   result.dts
@@ -573,8 +569,7 @@ pub fn no_warnings_when_type_resolved_test() {
     )
 
   let available = set.from_list([#("gleam_json", "gleam/json")])
-  let result =
-    wrapper.generate_module_wrapper(module, "my_lib", available)
+  let result = wrapper.generate_module_wrapper(module, "my_lib", available)
   result.warnings |> expect.to_equal([])
 }
 
@@ -606,8 +601,7 @@ pub fn passthrough_with_external_type_no_warning_test() {
       ]),
     )
 
-  let result =
-    wrapper.generate_module_wrapper(module, "my_lib", set.new())
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   // Not wrapped (no Result/Option), so no warnings
   result.has_wrapped_functions |> expect.to_be_false()
   result.warnings |> expect.to_equal([])
