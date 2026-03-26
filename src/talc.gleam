@@ -200,7 +200,8 @@ fn run_generate(
       |> list.fold(#([], set.new(), []), fn(acc, pair) {
         let #(files, wrapped, warnings) = acc
         let #(module_name, module) = pair
-        let result = wrapper.generate_module_wrapper(module, module_name)
+        let result =
+          wrapper.generate_module_wrapper(module, module_name, set.new())
         case result.has_wrapped_functions {
           True -> {
             let wrapper_mjs_path = "_wrapper/" <> module_name <> ".mjs"

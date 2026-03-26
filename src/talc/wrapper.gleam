@@ -10,6 +10,7 @@ import gleam/option.{None, Some}
 import gleam/package_interface.{
   type Function, type Module, type Type, Fn, Named, Tuple, Variable,
 }
+import gleam/set.{type Set}
 import gleam/string
 
 /// Result of generating wrapper files for a module.
@@ -32,6 +33,7 @@ pub type WrapperResult {
 pub fn generate_module_wrapper(
   module: Module,
   module_name: String,
+  available_type_files: Set(#(String, String)),
 ) -> WrapperResult {
   let functions =
     dict.to_list(module.functions)
@@ -52,7 +54,7 @@ pub fn generate_module_wrapper(
   let has_wrapped = list.any(analyzed, fn(t) { t.2 })
 
   let mjs = generate_mjs(analyzed, module_name)
-  let dts = generate_dts(analyzed, module_name)
+  let dts = generate_dts(analyzed, module_name, available_type_files)
 
   WrapperResult(mjs: mjs, dts: dts, has_wrapped_functions: has_wrapped)
 }
@@ -250,6 +252,7 @@ fn generate_wrapper_fn_mjs(name: String, func: Function) -> String {
 fn generate_dts(
   functions: List(#(String, Function, Bool)),
   module_name: String,
+  available_type_files: Set(#(String, String)),
 ) -> String {
   let passthrough =
     list.filter(functions, fn(t) { !t.2 })
@@ -323,7 +326,7 @@ fn generate_dts(
   let wrapper_decls =
     list.map(wrapped, fn(t) {
       let #(name, func, _) = t
-      generate_wrapper_fn_dts(name, func)
+      generate_wrapper_fn_dts(name, func, available_type_files)
     })
     |> string.join("\n")
 
@@ -335,7 +338,11 @@ fn generate_dts(
   preamble <> reexport <> "\n" <> wrapper_decls
 }
 
-fn generate_wrapper_fn_dts(name: String, func: Function) -> String {
+fn generate_wrapper_fn_dts(
+  name: String,
+  func: Function,
+  available_type_files: Set(#(String, String)),
+) -> String {
   let safe_name = escape_js_reserved(name)
 
   // Collect type variables from the function
@@ -359,10 +366,10 @@ fn generate_wrapper_fn_dts(name: String, func: Function) -> String {
         Some(label) -> escape_js_reserved(label)
         None -> "p" <> gleam_int.to_string(i)
       }
-      param_name <> ": " <> type_to_ts(p.type_, var_map)
+      param_name <> ": " <> type_to_ts(p.type_, var_map, available_type_files)
     })
 
-  let return_ts = type_to_ts(func.return, var_map)
+  let return_ts = type_to_ts(func.return, var_map, available_type_files)
 
   "export declare function "
   <> safe_name
@@ -377,7 +384,11 @@ fn generate_wrapper_fn_dts(name: String, func: Function) -> String {
 /// Maps a Gleam type to its true-myth-aware TypeScript representation.
 /// Result and Option are mapped to true-myth types; everything else uses
 /// basic TypeScript types.
-fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
+fn type_to_ts(
+  t: Type,
+  vars: Dict(Int, String),
+  available_type_files: Set(#(String, String)),
+) -> String {
   case t {
     Named(name: "Int", package: "", module: "gleam", ..) -> "number"
     Named(name: "Float", package: "", module: "gleam", ..) -> "number"
@@ -390,7 +401,8 @@ fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
 
     Named(name: "List", package: "", module: "gleam", parameters: params) ->
       case params {
-        [elem] -> "List<" <> type_to_ts(elem, vars) <> ">"
+        [elem] ->
+          "List<" <> type_to_ts(elem, vars, available_type_files) <> ">"
         _ -> "List<unknown>"
       }
 
@@ -398,9 +410,9 @@ fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
       case params {
         [ok_t, err_t] ->
           "Result<"
-          <> type_to_ts(ok_t, vars)
+          <> type_to_ts(ok_t, vars, available_type_files)
           <> ", "
-          <> type_to_ts(err_t, vars)
+          <> type_to_ts(err_t, vars, available_type_files)
           <> ">"
         _ -> "Result<unknown, unknown>"
       }
@@ -412,7 +424,8 @@ fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
       parameters: params,
     ) ->
       case params {
-        [inner] -> "Maybe<" <> type_to_ts(inner, vars) <> ">"
+        [inner] ->
+          "Maybe<" <> type_to_ts(inner, vars, available_type_files) <> ">"
         _ -> "Maybe<unknown>"
       }
 
@@ -423,26 +436,40 @@ fn type_to_ts(t: Type, vars: Dict(Int, String)) -> String {
       }
 
     Tuple(elements: elems) -> {
-      let types = list.map(elems, fn(e) { type_to_ts(e, vars) })
+      let types =
+        list.map(elems, fn(e) { type_to_ts(e, vars, available_type_files) })
       "readonly [" <> string.join(types, ", ") <> "]"
     }
 
     Fn(parameters: params, return: ret) -> {
       let param_types =
         list.index_map(params, fn(p, i) {
-          "p" <> gleam_int.to_string(i) <> ": " <> type_to_ts(p, vars)
+          "p"
+          <> gleam_int.to_string(i)
+          <> ": "
+          <> type_to_ts(p, vars, available_type_files)
         })
-      "(" <> string.join(param_types, ", ") <> ") => " <> type_to_ts(ret, vars)
+      "("
+      <> string.join(param_types, ", ")
+      <> ") => "
+      <> type_to_ts(ret, vars, available_type_files)
     }
 
-    // Fallback for other named types — use the type name directly
-    Named(name: n, parameters: params, ..) ->
-      case params {
-        [] -> n
-        ps -> {
-          let type_args = list.map(ps, fn(p) { type_to_ts(p, vars) })
-          n <> "<" <> string.join(type_args, ", ") <> ">"
-        }
+    // Non-prelude named types: check for type declaration file
+    Named(name: n, package: p, module: m, parameters: params) ->
+      case set.contains(available_type_files, #(p, m)) {
+        True ->
+          case params {
+            [] -> n
+            ps -> {
+              let type_args =
+                list.map(ps, fn(param) {
+                  type_to_ts(param, vars, available_type_files)
+                })
+              n <> "<" <> string.join(type_args, ", ") <> ">"
+            }
+          }
+        False -> "unknown"
       }
   }
 }

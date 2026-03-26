@@ -1,5 +1,6 @@
 import gleam/dict
 import gleam/option.{None, Some}
+import gleam/set
 import gleam/package_interface.{
   type Implementations, type Module, Function, Implementations, Module, Named,
   Parameter, Variable,
@@ -75,7 +76,7 @@ pub fn passthrough_function_test() {
       ]),
     )
 
-  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   result.has_wrapped_functions |> expect.to_be_false()
   // Both mjs and dts should just re-export
   result.mjs |> string_contains("export { greet }") |> expect.to_be_true()
@@ -102,7 +103,7 @@ pub fn wrap_result_return_test() {
       ]),
     )
 
-  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   result.has_wrapped_functions |> expect.to_be_true()
 
   // .mjs should import Ok, Error and true-myth converters
@@ -147,7 +148,7 @@ pub fn wrap_option_return_test() {
       ]),
     )
 
-  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   result.has_wrapped_functions |> expect.to_be_true()
 
   // .mjs should use Some check
@@ -200,7 +201,7 @@ pub fn mixed_passthrough_and_wrapped_test() {
       ]),
     )
 
-  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   result.has_wrapped_functions |> expect.to_be_true()
   // add should be re-exported
   result.mjs |> string_contains("export { add }") |> expect.to_be_true()
@@ -230,7 +231,7 @@ pub fn generic_result_return_test() {
       ]),
     )
 
-  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   result.has_wrapped_functions |> expect.to_be_true()
   // .d.ts should have generic params
   result.dts |> string_contains("<A, B>") |> expect.to_be_true()
@@ -259,7 +260,7 @@ pub fn no_wrapping_for_non_toplevel_result_test() {
       ]),
     )
 
-  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   // List(Result(...)) should NOT trigger wrapping — only top-level
   result.has_wrapped_functions |> expect.to_be_false()
 }
@@ -289,13 +290,46 @@ pub fn prelude_type_import_test() {
       ]),
     )
 
-  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  let result = wrapper.generate_module_wrapper(module, "my_lib", set.new())
   result.has_wrapped_functions |> expect.to_be_true()
   // .d.ts should import List from gleam prelude
   result.dts
   |> string_contains("import type { List } from \"../gleam.d.mts\"")
   |> expect.to_be_true()
   result.dts |> string_contains("List<string>") |> expect.to_be_true()
+}
+
+pub fn external_type_emits_unknown_test() {
+  let json_type =
+    Named(
+      name: "Json",
+      package: "gleam_json",
+      module: "gleam/json",
+      parameters: [],
+    )
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "encode",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("value"), type_: string_type()),
+            ],
+            return: result_type(json_type, nil_type()),
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper(module, "my_lib", set.new())
+  result.has_wrapped_functions |> expect.to_be_true()
+  result.dts |> string_contains("Result<unknown, undefined>") |> expect.to_be_true()
 }
 
 fn string_contains(haystack: String, needle: String) -> Bool {
