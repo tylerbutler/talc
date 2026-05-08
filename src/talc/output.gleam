@@ -13,6 +13,10 @@ pub type OutputError {
   CopyError(src: String, dest: String, detail: String)
   DirectoryError(path: String, detail: String)
   BuildNotFound(path: String)
+  /// Output directory is absolute or contains `..` traversal components.
+  UnsafeOutputDir(path: String)
+  /// A required build artifact is absent.
+  MissingArtifact(src: String, dest: String)
 }
 
 /// Formats an OutputError as a human-readable string.
@@ -26,6 +30,31 @@ pub fn error_to_string(error: OutputError) -> String {
       "Build output not found at "
       <> path
       <> ". Run `gleam build --target javascript` first."
+    UnsafeOutputDir(path) ->
+      "Unsafe output directory: "
+      <> path
+      <> ". Use a relative path with no '..' components."
+    MissingArtifact(src, dest) ->
+      "Required build artifact missing: "
+      <> src
+      <> " (expected at "
+      <> dest
+      <> ")"
+  }
+}
+
+/// Validates that an output directory path is safe to use.
+///
+/// Rejects absolute paths and any path that contains `..` components.
+pub fn validate_output_dir(path: String) -> Result(Nil, OutputError) {
+  let unsafe =
+    string.starts_with(path, "/")
+    || path == ".."
+    || string.starts_with(path, "../")
+    || string.contains(path, "/../")
+  case unsafe {
+    True -> Error(UnsafeOutputDir(path))
+    False -> Ok(Nil)
   }
 }
 
@@ -44,6 +73,8 @@ pub fn write(
   public_modules: Option(List(String)),
   generated_files: List(#(String, String)),
 ) -> Result(List(String), OutputError) {
+  use _ <- try_result(validate_output_dir(output_dir))
+
   let dist_dir = output_dir <> "/dist"
   let build_dir = "build/dev/javascript/" <> package_name
   let build_parent = "build/dev/javascript"
@@ -113,14 +144,15 @@ fn copy_build_files(
 }
 
 /// Copies .mjs and .d.mts files for specific modules plus gleam support files.
+/// Both artifacts are required; missing files return `MissingArtifact`.
 fn copy_module_files(
   build_dir: String,
   dist_dir: String,
   _package_name: String,
   modules: List(String),
 ) -> Result(List(String), OutputError) {
-  // Copy module files (.mjs + .d.mts)
-  use module_files <- try_result(
+  // Copy module files (.mjs + .d.mts); both are required
+  use module_files_rev <- try_result(
     list.try_fold(modules, [], fn(acc, module_name) {
       let extensions = [".mjs", ".d.mts"]
       list.try_fold(extensions, acc, fn(inner_acc, ext) {
@@ -137,16 +169,16 @@ fn copy_module_files(
               simplifile.copy_file(at: src, to: dest)
               |> map_file_error(CopyError(src, dest, _)),
             )
-            Ok(list.append(inner_acc, [dest]))
+            Ok([dest, ..inner_acc])
           }
-          _ -> Ok(inner_acc)
+          _ -> Error(MissingArtifact(src, dest))
         }
       })
     }),
   )
 
-  // Copy gleam.mjs and gleam.d.mts support files
-  use gleam_files <- try_result(
+  // Copy gleam.mjs and gleam.d.mts support files; both are required
+  use gleam_files_rev <- try_result(
     list.try_fold(["gleam.mjs", "gleam.d.mts"], [], fn(acc, file) {
       let src = build_dir <> "/" <> file
       let dest = dist_dir <> "/" <> file
@@ -156,37 +188,41 @@ fn copy_module_files(
             simplifile.copy_file(at: src, to: dest)
             |> map_file_error(CopyError(src, dest, _)),
           )
-          Ok(list.append(acc, [dest]))
+          Ok([dest, ..acc])
         }
-        _ -> Ok(acc)
+        _ -> Error(MissingArtifact(src, dest))
       }
     }),
   )
 
-  Ok(list.append(module_files, gleam_files))
+  Ok(list.append(list.reverse(module_files_rev), list.reverse(gleam_files_rev)))
 }
 
 /// Copies prelude.mjs and prelude.d.mts from the build parent directory.
 /// These are needed because gleam.d.mts re-exports from ../prelude.d.mts.
+/// Both files are required; missing files return `MissingArtifact`.
 fn copy_prelude_files(
   build_parent: String,
   dist_dir: String,
 ) -> Result(List(String), OutputError) {
-  list.try_fold(["prelude.mjs", "prelude.d.mts"], [], fn(acc, file) {
-    let src = build_parent <> "/" <> file
-    // Place prelude one level up from dist so ../prelude.d.mts resolves
-    let dest = dist_dir <> "/../" <> file
-    case simplifile.is_file(src) {
-      Ok(True) -> {
-        use _ <- try_result(
-          simplifile.copy_file(at: src, to: dest)
-          |> map_file_error(CopyError(src, dest, _)),
-        )
-        Ok(list.append(acc, [dest]))
+  use files_rev <- try_result(
+    list.try_fold(["prelude.mjs", "prelude.d.mts"], [], fn(acc, file) {
+      let src = build_parent <> "/" <> file
+      // Place prelude one level up from dist so ../prelude.d.mts resolves
+      let dest = dist_dir <> "/../" <> file
+      case simplifile.is_file(src) {
+        Ok(True) -> {
+          use _ <- try_result(
+            simplifile.copy_file(at: src, to: dest)
+            |> map_file_error(CopyError(src, dest, _)),
+          )
+          Ok([dest, ..acc])
+        }
+        _ -> Error(MissingArtifact(src, dest))
       }
-      _ -> Ok(acc)
-    }
-  })
+    }),
+  )
+  Ok(list.reverse(files_rev))
 }
 
 /// Writes generated files to the dist directory.
@@ -194,20 +230,23 @@ fn write_generated_files(
   dist_dir: String,
   files: List(#(String, String)),
 ) -> Result(List(String), OutputError) {
-  list.try_fold(files, [], fn(acc, pair) {
-    let #(rel_path, content) = pair
-    let dest = dist_dir <> "/" <> rel_path
-    let dest_dir = string_before_last(dest, "/")
-    use _ <- try_result(
-      simplifile.create_directory_all(dest_dir)
-      |> map_file_error(DirectoryError(dest_dir, _)),
-    )
-    use _ <- try_result(
-      simplifile.write(to: dest, contents: content)
-      |> map_file_error(WriteError(dest, _)),
-    )
-    Ok(list.append(acc, [dest]))
-  })
+  use files_rev <- try_result(
+    list.try_fold(files, [], fn(acc, pair) {
+      let #(rel_path, content) = pair
+      let dest = dist_dir <> "/" <> rel_path
+      let dest_dir = string_before_last(dest, "/")
+      use _ <- try_result(
+        simplifile.create_directory_all(dest_dir)
+        |> map_file_error(DirectoryError(dest_dir, _)),
+      )
+      use _ <- try_result(
+        simplifile.write(to: dest, contents: content)
+        |> map_file_error(WriteError(dest, _)),
+      )
+      Ok([dest, ..acc])
+    }),
+  )
+  Ok(list.reverse(files_rev))
 }
 
 /// Recursively copies files matching any of the given extensions.
@@ -220,39 +259,42 @@ fn copy_dir_recursive_multi(
     simplifile.create_directory_all(dest_dir)
     |> map_file_error(DirectoryError(dest_dir, _)),
   )
-  use entries <- try_result(case simplifile.read_directory(src_dir) {
-    Ok(e) -> Ok(e)
-    Error(_) -> Ok([])
-  })
+  use entries <- try_result(
+    simplifile.read_directory(src_dir)
+    |> map_file_error(DirectoryError(src_dir, _)),
+  )
 
-  list.try_fold(entries, [], fn(acc, entry) {
-    let src_path = src_dir <> "/" <> entry
-    let dest_path = dest_dir <> "/" <> entry
-    case simplifile.is_directory(src_path) {
-      Ok(True) -> {
-        use sub_files <- try_result(copy_dir_recursive_multi(
-          src_path,
-          dest_path,
-          extensions,
-        ))
-        Ok(list.append(acc, sub_files))
-      }
-      _ -> {
-        let matches =
-          list.any(extensions, fn(ext) { string.ends_with(entry, ext) })
-        case matches {
-          True -> {
-            use _ <- try_result(
-              simplifile.copy_file(at: src_path, to: dest_path)
-              |> map_file_error(CopyError(src_path, dest_path, _)),
-            )
-            Ok(list.append(acc, [dest_path]))
+  use files_rev <- try_result(
+    list.try_fold(entries, [], fn(acc, entry) {
+      let src_path = src_dir <> "/" <> entry
+      let dest_path = dest_dir <> "/" <> entry
+      case simplifile.is_directory(src_path) {
+        Ok(True) -> {
+          use sub_files <- try_result(copy_dir_recursive_multi(
+            src_path,
+            dest_path,
+            extensions,
+          ))
+          Ok(list.append(sub_files, acc))
+        }
+        _ -> {
+          let matches =
+            list.any(extensions, fn(ext) { string.ends_with(entry, ext) })
+          case matches {
+            True -> {
+              use _ <- try_result(
+                simplifile.copy_file(at: src_path, to: dest_path)
+                |> map_file_error(CopyError(src_path, dest_path, _)),
+              )
+              Ok([dest_path, ..acc])
+            }
+            False -> Ok(acc)
           }
-          False -> Ok(acc)
         }
       }
-    }
-  })
+    }),
+  )
+  Ok(list.reverse(files_rev))
 }
 
 /// Copies README.md and LICENSE from the project root if they exist.
