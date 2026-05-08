@@ -57,17 +57,6 @@ test-integration:
     (cd "$FIXTURE" && erl -noshell "${EBIN_FLAGS[@]}" \
       -eval 'talc:main(), erlang:halt(0).' -extra generate)
 
-    echo "→ Copying gleam_stdlib runtime for Node module resolution..."
-    SRC="$ROOT_DIR/$FIXTURE/build/dev/javascript/gleam_stdlib"
-    DEST="$ROOT_DIR/$FIXTURE/npm_dist/gleam_stdlib"
-    mkdir -p "$DEST"
-    find "$SRC" \( -name "*.mjs" -o -name "*.d.mts" \) | while read -r f; do
-      rel="${f#$SRC/}"
-      dest_file="$DEST/$rel"
-      mkdir -p "$(dirname "$dest_file")"
-      cp "$f" "$dest_file"
-    done
-
     echo "→ Installing true-myth peer dependency..."
     (cd "$FIXTURE" && npm install --no-fund --quiet)
 

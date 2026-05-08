@@ -161,3 +161,28 @@ pub fn write_fails_when_gleam_support_mjs_missing_test() {
   result |> expect.to_be_error()
   Nil
 }
+
+pub fn write_copies_dependency_javascript_artifacts_test() {
+  let pkg = "talc_output_test_deps"
+  let dep = "talc_output_dep"
+  let build_pkg = "build/dev/javascript/" <> pkg
+  let build_dep = "build/dev/javascript/" <> dep
+  let out = "test_work/" <> pkg <> "_out"
+  let _ = simplifile.delete_all([build_pkg, build_dep, out])
+  let prelude_stubs = setup_full_artifacts(pkg, "mymod")
+  let _ = simplifile.create_directory_all(build_dep <> "/nested")
+  let _ = simplifile.write(to: build_dep <> "/nested/runtime.mjs", contents: "")
+  let _ =
+    simplifile.write(to: build_dep <> "/nested/runtime.d.mts", contents: "")
+
+  let result = output.write(out, pkg, "{}", Some(["mymod"]), [])
+  let copied_mjs =
+    simplifile.is_file(out <> "/" <> dep <> "/nested/runtime.mjs")
+  let copied_dts =
+    simplifile.is_file(out <> "/" <> dep <> "/nested/runtime.d.mts")
+
+  let _ = simplifile.delete_all([build_pkg, build_dep, out, ..prelude_stubs])
+  result |> expect.to_be_ok()
+  copied_mjs |> expect.to_equal(Ok(True))
+  copied_dts |> expect.to_equal(Ok(True))
+}

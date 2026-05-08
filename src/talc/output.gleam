@@ -105,6 +105,14 @@ pub fn write(
   // Copy prelude support files (prelude.mjs, prelude.d.mts)
   use prelude_files <- try_result(copy_prelude_files(build_parent, dist_dir))
 
+  // Copy dependency JavaScript artifacts that compiled modules import via
+  // paths like ../gleam_stdlib/...
+  use dependency_files <- try_result(copy_dependency_files(
+    build_parent,
+    output_dir,
+    package_name,
+  ))
+
   // Write generated files (e.g., wrapper modules)
   use gen_written <- try_result(write_generated_files(dist_dir, generated_files))
 
@@ -116,6 +124,7 @@ pub fn write(
       written,
       build_files,
       prelude_files,
+      dependency_files,
       gen_written,
       optional_files,
     ]),
@@ -220,6 +229,43 @@ fn copy_prelude_files(
           Ok([dest, ..acc])
         }
         _ -> Error(MissingArtifact(src, dest))
+      }
+    }),
+  )
+  Ok(list.reverse(files_rev))
+}
+
+/// Copies dependency package `.mjs` and `.d.mts` artifacts next to `dist/`.
+///
+/// Gleam's JavaScript output uses relative imports such as
+/// `../gleam_stdlib/gleam/int.mjs`, so dependency artifacts must be present at
+/// the package root for generated modules to run in Node.
+fn copy_dependency_files(
+  build_parent: String,
+  output_dir: String,
+  package_name: String,
+) -> Result(List(String), OutputError) {
+  use entries <- try_result(
+    simplifile.read_directory(build_parent)
+    |> map_file_error(DirectoryError(build_parent, _)),
+  )
+
+  use files_rev <- try_result(
+    list.try_fold(entries, [], fn(acc, entry) {
+      let src = build_parent <> "/" <> entry
+      let dest = output_dir <> "/" <> entry
+      case entry == package_name {
+        True -> Ok(acc)
+        False ->
+          case simplifile.is_directory(src) {
+            Ok(True) -> {
+              use copied <- try_result(
+                copy_dir_recursive_multi(src, dest, [".mjs", ".d.mts"]),
+              )
+              Ok(list.fold(copied, acc, fn(a, f) { [f, ..a] }))
+            }
+            _ -> Ok(acc)
+          }
       }
     }),
   )
