@@ -14,6 +14,13 @@ pub type NpmResult {
 pub type NpmError {
   NpmFailed(command: String, exit_code: Int, output: String)
   NpmTimeout(command: String)
+  NpmNotFound
+}
+
+/// Internal FFI error discriminants.
+type NpmRunError {
+  RunTimeout
+  RunNotFound
 }
 
 /// Errors from publish flag validation.
@@ -34,6 +41,7 @@ pub fn error_to_string(error: NpmError) -> String {
       <> string.trim(output)
     }
     NpmTimeout(cmd) -> "npm " <> cmd <> " timed out"
+    NpmNotFound -> "npm executable not found"
   }
 }
 
@@ -54,7 +62,8 @@ pub fn pack(working_dir: String) -> Result(String, NpmError) {
   case run_npm("pack", [], working_dir) {
     Ok(#(0, output)) -> Ok(string.trim(output))
     Ok(#(code, output)) -> Error(NpmFailed("pack", code, output))
-    Error(Nil) -> Error(NpmTimeout("pack"))
+    Error(RunNotFound) -> Error(NpmNotFound)
+    Error(RunTimeout) -> Error(NpmTimeout("pack"))
   }
 }
 
@@ -66,7 +75,8 @@ pub fn publish(
   case run_npm("publish", flags, working_dir) {
     Ok(#(0, output)) -> Ok(string.trim(output))
     Ok(#(code, output)) -> Error(NpmFailed("publish", code, output))
-    Error(Nil) -> Error(NpmTimeout("publish"))
+    Error(RunNotFound) -> Error(NpmNotFound)
+    Error(RunTimeout) -> Error(NpmTimeout("publish"))
   }
 }
 
@@ -205,7 +215,7 @@ fn run_npm(
   command: String,
   args: List(String),
   working_dir: String,
-) -> Result(#(Int, String), Nil)
+) -> Result(#(Int, String), NpmRunError)
 
 import gleam/int
 

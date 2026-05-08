@@ -61,3 +61,29 @@ pub fn error_to_string_timeout_test() {
   |> npm.error_to_string()
   |> expect.to_equal("npm pack timed out")
 }
+
+pub fn error_to_string_not_found_test() {
+  npm.NpmNotFound
+  |> npm.error_to_string()
+  |> expect.to_equal("npm executable not found")
+}
+
+pub fn build_publish_flags_empty_tag_test() {
+  npm.build_publish_flags(False, Ok(""), Error(Nil), False)
+  |> expect.to_equal(Error(npm.InvalidTag("")))
+}
+
+pub fn build_publish_flags_tag_with_spaces_test() {
+  npm.build_publish_flags(False, Ok("latest beta"), Error(Nil), False)
+  |> expect.to_equal(Error(npm.InvalidTag("latest beta")))
+}
+
+pub fn build_publish_flags_access_private_test() {
+  npm.build_publish_flags(False, Error(Nil), Ok("private"), False)
+  |> expect.to_equal(Error(npm.InvalidAccess("private")))
+}
+
+pub fn build_publish_flags_both_invalid_tag_wins_test() {
+  npm.build_publish_flags(False, Ok("bad tag!"), Ok("private"), False)
+  |> expect.to_equal(Error(npm.InvalidTag("bad tag!")))
+}

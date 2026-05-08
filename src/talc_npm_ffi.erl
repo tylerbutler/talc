@@ -2,11 +2,12 @@
 -export([run_npm/3]).
 
 %% Runs an npm command with argv-style execution in the given working directory.
-%% Returns {ok, {ExitCode, OutputBinary}} or {error, nil} on timeout or if npm is not found.
+%% Returns {ok, {ExitCode, OutputBinary}}, {error, run_not_found} if npm is
+%% missing, or {error, run_timeout} on timeout.
 run_npm(Command, Args, WorkDir) ->
     case os:find_executable("npm") of
         false ->
-            {error, nil};
+            {error, run_not_found};
         NpmPath ->
             Port = open_port(
                 {spawn_executable, NpmPath},
@@ -30,5 +31,5 @@ collect_port(Port, Chunks) ->
             {ok, {Code, Output}}
     after 120000 ->
         port_close(Port),
-        {error, nil}
+        {error, run_timeout}
     end.
