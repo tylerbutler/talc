@@ -272,10 +272,21 @@ fn run_publish(
 ) -> Result(#(String, List(String)), String) {
   use #(_files, warnings) <- try_ok(run_generate(output_dir_override))
 
-  let output_dir = resolve_output_dir(output_dir_override)
+  use talc <- try_ok(talc_config.read(from: "."))
+
+  let output_dir = case output_dir_override {
+    Some(dir) -> dir
+    None -> talc.package.output_dir
+  }
+
+  let registry_flags = case talc.package.registry {
+    Some(url) -> ["--registry", url]
+    None -> []
+  }
+  let all_flags = list.append(flags, registry_flags)
 
   use npm_output <- try_ok(
-    npm.publish(output_dir, flags) |> map_error(npm.error_to_string),
+    npm.publish(output_dir, all_flags) |> map_error(npm.error_to_string),
   )
 
   Ok(#(npm_output, warnings))

@@ -100,6 +100,7 @@ pub fn generate_with_modules(
       )
     let repository_fields = build_repository_fields(gleam_config)
     let extra_fields = build_extra_fields(talc_config)
+    let publish_config_fields = build_publish_config_fields(talc_config)
     let peer_dep_fields =
       build_peer_dep_fields(
         talc_config,
@@ -120,6 +121,7 @@ pub fn generate_with_modules(
         license_fields,
         esm_fields,
         repository_fields,
+        publish_config_fields,
         peer_dep_fields,
       ])
       |> list.filter(fn(pair) { !dict.has_key(extra_keys, pair.0) })
@@ -243,6 +245,20 @@ fn repository_url(repo: gleam_toml.Repository) -> String {
     "gitlab" -> "https://gitlab.com/" <> repo.user <> "/" <> repo.repo
     "bitbucket" -> "https://bitbucket.org/" <> repo.user <> "/" <> repo.repo
     _ -> repo.user <> "/" <> repo.repo
+  }
+}
+
+/// Builds publishConfig field from talc.ccl registry config.
+/// When registry is set, adds publishConfig.registry to direct npm publish
+/// to the configured registry.
+fn build_publish_config_fields(
+  config: TalcConfig,
+) -> List(#(String, json.Json)) {
+  case config.package.registry {
+    None -> []
+    Some(url) -> [
+      #("publishConfig", json.object([#("registry", json.string(url))])),
+    ]
   }
 }
 

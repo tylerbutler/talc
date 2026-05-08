@@ -390,3 +390,58 @@ pub fn check_report_with_modules_missing_root_fails_test() {
   |> string_contains("Failed to generate package.json")
   |> expect.to_be_true()
 }
+
+pub fn generate_includes_publish_config_registry_test() {
+  let gleam = test_gleam_config()
+  let talc =
+    TalcConfig(
+      ..test_talc_config(),
+      package: PackageConfig(
+        ..talc_config.default().package,
+        registry: Some("https://registry.example.com"),
+      ),
+    )
+  let json = package_json.generate(gleam, talc) |> expect.to_be_ok()
+  json
+  |> string_contains("\"publishConfig\"")
+  |> expect.to_be_true()
+  json
+  |> string_contains("\"registry\":\"https://registry.example.com\"")
+  |> expect.to_be_true()
+}
+
+pub fn generate_registry_none_omits_publish_config_test() {
+  let gleam = test_gleam_config()
+  let talc = test_talc_config()
+  let json = package_json.generate(gleam, talc) |> expect.to_be_ok()
+  json |> string_contains("\"publishConfig\"") |> expect.to_be_false()
+}
+
+pub fn generate_extra_fields_publish_config_overrides_registry_test() {
+  let gleam = test_gleam_config()
+  let talc =
+    TalcConfig(
+      ..test_talc_config(),
+      package: PackageConfig(
+        ..talc_config.default().package,
+        registry: Some("https://registry.example.com"),
+      ),
+      extra_fields: [
+        #(
+          "publishConfig",
+          json.object([
+            #("registry", json.string("https://custom.override.com")),
+          ]),
+        ),
+      ],
+    )
+  let json = package_json.generate(gleam, talc) |> expect.to_be_ok()
+  // extra_fields override wins
+  json
+  |> string_contains("\"https://custom.override.com\"")
+  |> expect.to_be_true()
+  // auto-generated registry should not appear
+  json
+  |> string_contains("\"https://registry.example.com\"")
+  |> expect.to_be_false()
+}
