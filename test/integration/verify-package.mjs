@@ -13,9 +13,7 @@ const distDir = path.resolve(
 );
 
 // 1. Root module: plain function (no wrapping)
-const rootModule = await import(
-  path.join(distDir, "basic_gleam_package.mjs")
-);
+const rootModule = await import(path.join(distDir, "basic_gleam_package.mjs"));
 assert.strictEqual(
   rootModule.greet("World"),
   "Hello, World!",
@@ -27,9 +25,12 @@ const wrapper = await import(
   path.join(distDir, "_wrapper/basic_gleam_package.mjs")
 );
 
-const okResult = wrapper.parse_ready();
-assert.strictEqual(okResult.isOk, true, "parse_ready().isOk");
-assert.strictEqual(okResult.value, 42, "parse_ready().value === 42");
+const okResult = wrapper.parse_positive("42");
+assert.strictEqual(okResult.isOk, true, 'parse_positive("42").isOk');
+assert.strictEqual(okResult.value, 42, 'parse_positive("42").value === 42');
+
+const errResult = wrapper.parse_positive("abc");
+assert.strictEqual(errResult.isOk, false, 'parse_positive("abc") should be Err');
 
 // 3. Submodule export
 const mathModule = await import(

@@ -1,9 +1,16 @@
+import gleam/int
+
 /// Returns a greeting string.
 pub fn greet(name: String) -> String {
   "Hello, " <> name <> "!"
 }
 
-/// Returns a Result so talc generates a true-myth wrapper.
-pub fn parse_ready() -> Result(Int, String) {
-  Ok(42)
+/// Parses a positive integer from a string.
+/// Returns Ok(n) if positive, or Error(msg) otherwise.
+pub fn parse_positive(s: String) -> Result(Int, String) {
+  case int.parse(s) {
+    Ok(n) if n > 0 -> Ok(n)
+    Ok(_) -> Error("not positive")
+    Error(_) -> Error("not a number")
+  }
 }

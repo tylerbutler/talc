@@ -35,7 +35,52 @@ test:
 
 # Run fixture-based JavaScript/npm packaging integration test
 test-integration:
-    bash -euo pipefail -c 'fixture="test/fixtures/basic_gleam_package"; cleanup() { rm -rf "$fixture/build" "$fixture/npm_dist" "$fixture/node_modules" "$fixture/package-lock.json" "$fixture/manifest.toml"; }; cleanup; trap cleanup EXIT; gleam build --no-print-progress; (cd "$fixture" && gleam deps download && gleam build --target javascript); erl -noshell -pa "$PWD"/build/dev/erlang/*/ebin -eval '\''file:set_cwd("test/fixtures/basic_gleam_package"), talc:main(), halt().'\'' -extra generate; npm install --prefix "$fixture" --package-lock=false --no-audit --no-fund --silent; node test/integration/verify-package.mjs; (cd "$fixture/npm_dist" && npm pack --dry-run)'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    FIXTURE=test/fixtures/basic_gleam_package
+
+    # Clean fixture artifacts so root gleam build isn't affected by .erl files
+    rm -rf "$FIXTURE/build" "$FIXTURE/npm_dist"
+
+    echo "→ Building talc (Erlang)..."
+    gleam build
+
+    echo "→ Building fixture for JavaScript..."
+    (cd "$FIXTURE" && gleam deps download && gleam build --target javascript)
+
+    echo "→ Running talc generate..."
+    ROOT_DIR="$PWD"
+    EBIN_FLAGS=()
+    while IFS= read -r dir; do
+      EBIN_FLAGS+=("-pa" "$ROOT_DIR/$dir")
+    done < <(find build/dev/erlang -name ebin -type d)
+    (cd "$FIXTURE" && erl -noshell "${EBIN_FLAGS[@]}" \
+      -eval 'talc:main(), erlang:halt(0).' -extra generate)
+
+    echo "→ Copying gleam_stdlib runtime for Node module resolution..."
+    SRC="$ROOT_DIR/$FIXTURE/build/dev/javascript/gleam_stdlib"
+    DEST="$ROOT_DIR/$FIXTURE/npm_dist/gleam_stdlib"
+    mkdir -p "$DEST"
+    find "$SRC" \( -name "*.mjs" -o -name "*.d.mts" \) | while read -r f; do
+      rel="${f#$SRC/}"
+      dest_file="$DEST/$rel"
+      mkdir -p "$(dirname "$dest_file")"
+      cp "$f" "$dest_file"
+    done
+
+    echo "→ Installing true-myth peer dependency..."
+    (cd "$FIXTURE" && npm install --no-fund --quiet)
+
+    echo "→ Running Node verifier..."
+    node test/integration/verify-package.mjs
+
+    echo "→ Verifying npm pack..."
+    (cd "$FIXTURE/npm_dist" && npm pack --dry-run --quiet)
+
+    echo "→ Cleaning fixture build artifacts..."
+    rm -rf "$FIXTURE/build"
+
+    echo "✓ Integration tests passed"
 
 # === CODE QUALITY ===
 
