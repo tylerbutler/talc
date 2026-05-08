@@ -137,7 +137,7 @@ fn publish_command() -> glint.Command(Nil) {
     Error(_) -> None
   }
 
-  let publish_flags =
+  let publish_flags_result =
     npm.build_publish_flags(
       result.unwrap(dry_run_getter(flags), False),
       tag_getter(flags),
@@ -145,19 +145,26 @@ fn publish_command() -> glint.Command(Nil) {
       result.unwrap(provenance_getter(flags), False),
     )
 
-  case run_publish(output_dir_override, publish_flags) {
-    Ok(#(npm_output, warnings)) -> {
-      io.println("✓ Published!")
-      case npm_output {
-        "" -> Nil
-        out -> io.println(out)
-      }
-      print_warnings(warnings)
-    }
-    Error(msg) -> {
-      io.println_error("✗ " <> msg)
+  case publish_flags_result {
+    Error(flag_err) -> {
+      io.println_error("✗ " <> npm.publish_flag_error_to_string(flag_err))
       halt(1)
     }
+    Ok(publish_flags) ->
+      case run_publish(output_dir_override, publish_flags) {
+        Ok(#(npm_output, warnings)) -> {
+          io.println("✓ Published!")
+          case npm_output {
+            "" -> Nil
+            out -> io.println(out)
+          }
+          print_warnings(warnings)
+        }
+        Error(msg) -> {
+          io.println_error("✗ " <> msg)
+          halt(1)
+        }
+      }
   }
 }
 

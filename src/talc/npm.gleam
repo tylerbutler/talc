@@ -2,6 +2,7 @@
 ///
 /// Used by the `pack` and `publish` commands to wrap `npm pack` and
 /// `npm publish` with pre-flight checks and flag pass-through.
+import gleam/list
 import gleam/string
 
 /// Result of running an npm command.
@@ -13,6 +14,12 @@ pub type NpmResult {
 pub type NpmError {
   NpmFailed(command: String, exit_code: Int, output: String)
   NpmTimeout(command: String)
+}
+
+/// Errors from publish flag validation.
+pub type PublishFlagError {
+  InvalidTag(String)
+  InvalidAccess(String)
 }
 
 /// Formats an NpmError as a human-readable string.
@@ -30,9 +37,21 @@ pub fn error_to_string(error: NpmError) -> String {
   }
 }
 
+/// Formats a PublishFlagError as a human-readable string.
+pub fn publish_flag_error_to_string(error: PublishFlagError) -> String {
+  case error {
+    InvalidTag(t) ->
+      "Invalid tag \""
+      <> t
+      <> "\": only alphanumerics, hyphens, underscores, and dots are allowed"
+    InvalidAccess(a) ->
+      "Invalid access \"" <> a <> "\": must be \"public\" or \"restricted\""
+  }
+}
+
 /// Runs `npm pack` in the given directory.
 pub fn pack(working_dir: String) -> Result(String, NpmError) {
-  case run_npm("pack", working_dir) {
+  case run_npm("pack", [], working_dir) {
     Ok(#(0, output)) -> Ok(string.trim(output))
     Ok(#(code, output)) -> Error(NpmFailed("pack", code, output))
     Error(Nil) -> Error(NpmTimeout("pack"))
@@ -44,11 +63,7 @@ pub fn publish(
   working_dir: String,
   flags: List(String),
 ) -> Result(String, NpmError) {
-  let args = case flags {
-    [] -> "publish"
-    _ -> "publish " <> string.join(flags, " ")
-  }
-  case run_npm(args, working_dir) {
+  case run_npm("publish", flags, working_dir) {
     Ok(#(0, output)) -> Ok(string.trim(output))
     Ok(#(code, output)) -> Error(NpmFailed("publish", code, output))
     Error(Nil) -> Error(NpmTimeout("publish"))
@@ -56,34 +71,141 @@ pub fn publish(
 }
 
 /// Builds the npm publish flags from optional CLI flag values.
+/// Returns an error if any flag value contains unsafe characters.
 pub fn build_publish_flags(
   dry_run: Bool,
   tag: Result(String, a),
   access: Result(String, b),
   provenance: Bool,
-) -> List(String) {
-  let flags = []
-  let flags = case dry_run {
-    True -> ["--dry-run", ..flags]
-    False -> flags
+) -> Result(List(String), PublishFlagError) {
+  let tag_result = case tag {
+    Error(_) -> Ok(Error(Nil))
+    Ok(t) ->
+      case is_safe_tag(t) {
+        True -> Ok(Ok(t))
+        False -> Error(InvalidTag(t))
+      }
   }
-  let flags = case tag {
-    Ok(t) -> ["--tag", t, ..flags]
-    Error(_) -> flags
+  let access_result = case access {
+    Error(_) -> Ok(Error(Nil))
+    Ok("public") -> Ok(Ok("public"))
+    Ok("restricted") -> Ok(Ok("restricted"))
+    Ok(a) -> Error(InvalidAccess(a))
   }
-  let flags = case access {
-    Ok(a) -> ["--access", a, ..flags]
-    Error(_) -> flags
+
+  case tag_result {
+    Error(e) -> Error(e)
+    Ok(tag_val) ->
+      case access_result {
+        Error(e) -> Error(e)
+        Ok(access_val) -> {
+          let flags = []
+          let flags = case dry_run {
+            True -> ["--dry-run", ..flags]
+            False -> flags
+          }
+          let flags = case tag_val {
+            Ok(t) -> ["--tag", t, ..flags]
+            Error(_) -> flags
+          }
+          let flags = case access_val {
+            Ok(a) -> ["--access", a, ..flags]
+            Error(_) -> flags
+          }
+          let flags = case provenance {
+            True -> ["--provenance", ..flags]
+            False -> flags
+          }
+          Ok(flags)
+        }
+      }
   }
-  let flags = case provenance {
-    True -> ["--provenance", ..flags]
-    False -> flags
+}
+
+fn is_safe_tag(tag: String) -> Bool {
+  case tag {
+    "" -> False
+    _ -> list.all(string.to_graphemes(tag), is_safe_tag_char)
   }
-  flags
+}
+
+fn is_safe_tag_char(c: String) -> Bool {
+  case c {
+    "a"
+    | "b"
+    | "c"
+    | "d"
+    | "e"
+    | "f"
+    | "g"
+    | "h"
+    | "i"
+    | "j"
+    | "k"
+    | "l"
+    | "m"
+    | "n"
+    | "o"
+    | "p"
+    | "q"
+    | "r"
+    | "s"
+    | "t"
+    | "u"
+    | "v"
+    | "w"
+    | "x"
+    | "y"
+    | "z"
+    | "A"
+    | "B"
+    | "C"
+    | "D"
+    | "E"
+    | "F"
+    | "G"
+    | "H"
+    | "I"
+    | "J"
+    | "K"
+    | "L"
+    | "M"
+    | "N"
+    | "O"
+    | "P"
+    | "Q"
+    | "R"
+    | "S"
+    | "T"
+    | "U"
+    | "V"
+    | "W"
+    | "X"
+    | "Y"
+    | "Z"
+    | "0"
+    | "1"
+    | "2"
+    | "3"
+    | "4"
+    | "5"
+    | "6"
+    | "7"
+    | "8"
+    | "9"
+    | "-"
+    | "_"
+    | "." -> True
+    _ -> False
+  }
 }
 
 @external(erlang, "talc_npm_ffi", "run_npm")
-fn run_npm(args: String, working_dir: String) -> Result(#(Int, String), Nil)
+fn run_npm(
+  command: String,
+  args: List(String),
+  working_dir: String,
+) -> Result(#(Int, String), Nil)
 
 import gleam/int
 
