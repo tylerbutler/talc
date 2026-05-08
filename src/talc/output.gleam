@@ -45,14 +45,15 @@ pub fn error_to_string(error: OutputError) -> String {
 
 /// Validates that an output directory path is safe to use.
 ///
-/// Rejects absolute paths and any path that contains `..` components,
+/// Rejects absolute paths, empty strings, and any path that contains `..` components,
 /// including trailing ones like `foo/..` or `a/b/..`.
 pub fn validate_output_dir(path: String) -> Result(Nil, OutputError) {
+  let is_empty = string.is_empty(path)
   let is_absolute = string.starts_with(path, "/")
   let has_dotdot =
     string.split(path, "/")
     |> list.any(fn(component) { component == ".." })
-  case is_absolute || has_dotdot {
+  case is_empty || is_absolute || has_dotdot {
     True -> Error(UnsafeOutputDir(path))
     False -> Ok(Nil)
   }

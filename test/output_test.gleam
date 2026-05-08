@@ -55,6 +55,11 @@ pub fn validate_output_dir_rejects_nested_trailing_parent_test() {
   Nil
 }
 
+pub fn validate_output_dir_rejects_empty_test() {
+  validate_output_dir("")
+  |> expect.to_equal(Error(UnsafeOutputDir("")))
+}
+
 // ─── error_to_string ─────────────────────────────────────────────────────────
 
 pub fn error_to_string_unsafe_output_dir_test() {
