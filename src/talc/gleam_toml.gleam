@@ -97,7 +97,9 @@ fn get_licences(toml: dict.Dict(String, tom.Toml)) -> List(String) {
   }
 }
 
-fn get_repository(toml: dict.Dict(String, tom.Toml)) -> Result(Repository, Nil) {
+fn get_repository(
+  toml: dict.Dict(String, tom.Toml),
+) -> Result(Repository, Nil) {
   use type_ <- result.try(
     tom.get_string(toml, ["repository", "type"])
     |> result.replace_error(Nil),

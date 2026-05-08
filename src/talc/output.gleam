@@ -273,7 +273,10 @@ fn copy_optional_files(output_dir: String) -> List(String) {
 }
 
 // Helper to chain Result operations
-fn try_result(result: Result(a, e), next: fn(a) -> Result(b, e)) -> Result(b, e) {
+fn try_result(
+  result: Result(a, e),
+  next: fn(a) -> Result(b, e),
+) -> Result(b, e) {
   case result {
     Ok(value) -> next(value)
     Error(err) -> Error(err)
