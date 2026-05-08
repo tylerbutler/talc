@@ -20,9 +20,14 @@ pub fn load() -> Result(Package, String) {
 
   use #(exit_code, output) <- result.try(case run_gleam_export(tmp_path) {
     Ok(result) -> Ok(result)
-    Error(RunNotFound) -> Error("gleam executable not found in PATH")
-    Error(RunTimeout) ->
+    Error(RunNotFound) -> {
+      let _ = simplifile.delete(tmp_path)
+      Error("gleam executable not found in PATH")
+    }
+    Error(RunTimeout) -> {
+      let _ = simplifile.delete(tmp_path)
       Error("Timed out running `gleam export package-interface`")
+    }
   })
 
   use _ <- result.try(case exit_code {

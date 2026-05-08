@@ -25,3 +25,6 @@ Thumbs.db
 .claude/settings.local.json
 npm_dist/
 test/fixtures/birch/
+
+# Talc temporary package interface files
+.talc_pkg_iface_*.json
