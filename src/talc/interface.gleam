@@ -18,31 +18,36 @@ import simplifile
 pub fn load() -> Result(Package, String) {
   let tmp_path = temp_path()
 
-  use exit_code <- result.try(
-    run_gleam_export(tmp_path)
-    |> result.map_error(fn(_) {
-      "Failed to run `gleam export package-interface`"
-    }),
-  )
+  use #(exit_code, output) <- result.try(case run_gleam_export(tmp_path) {
+    Ok(result) -> Ok(result)
+    Error(RunNotFound) -> Error("gleam executable not found in PATH")
+    Error(RunTimeout) ->
+      Error("Timed out running `gleam export package-interface`")
+  })
 
   use _ <- result.try(case exit_code {
     0 -> Ok(Nil)
-    _ ->
+    _ -> {
+      let _ = simplifile.delete(tmp_path)
       Error(
         "`gleam export package-interface` failed with exit code "
-        <> int.to_string(exit_code),
+        <> int.to_string(exit_code)
+        <> ":\n"
+        <> string.trim(output),
       )
+    }
   })
 
-  use json_content <- result.try(
+  let read_result =
     simplifile.read(tmp_path)
     |> result.map_error(fn(_) {
       "Failed to read package interface output at " <> tmp_path
-    }),
-  )
+    })
 
-  // Clean up temp file
+  // Clean up temp file on all paths after successful export
   let _ = simplifile.delete(tmp_path)
+
+  use json_content <- result.try(read_result)
 
   use package <- result.try(
     json.parse(json_content, package_interface.decoder())
@@ -84,12 +89,19 @@ pub fn module_to_dts_path(module_name: String) -> String {
 
 // -- Internals --
 
+type InterfaceRunError {
+  RunNotFound
+  RunTimeout
+}
+
 fn temp_path() -> String {
-  "/tmp/talc_package_interface_" <> random_id() <> ".json"
+  ".talc_pkg_iface_" <> random_id() <> ".json"
 }
 
 @external(erlang, "talc_interface_ffi", "run_gleam_export")
-fn run_gleam_export(out_path: String) -> Result(Int, Nil)
+fn run_gleam_export(
+  out_path: String,
+) -> Result(#(Int, String), InterfaceRunError)
 
 @external(erlang, "talc_interface_ffi", "random_id")
 fn random_id() -> String
