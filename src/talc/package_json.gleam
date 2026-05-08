@@ -255,7 +255,7 @@ fn build_publish_config_fields(
   config: TalcConfig,
 ) -> List(#(String, json.Json)) {
   case config.package.registry {
-    None -> []
+    None | Some("") -> []
     Some(url) -> [
       #("publishConfig", json.object([#("registry", json.string(url))])),
     ]
