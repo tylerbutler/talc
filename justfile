@@ -33,6 +33,10 @@ build-strict:
 test:
     gleam test
 
+# Run fixture-based JavaScript/npm packaging integration test
+test-integration:
+    bash -euo pipefail -c 'fixture="test/fixtures/basic_gleam_package"; cleanup() { rm -rf "$fixture/build" "$fixture/npm_dist" "$fixture/node_modules" "$fixture/package-lock.json" "$fixture/manifest.toml"; }; cleanup; trap cleanup EXIT; gleam build --no-print-progress; (cd "$fixture" && gleam deps download && gleam build --target javascript); erl -noshell -pa "$PWD"/build/dev/erlang/*/ebin -eval '\''file:set_cwd("test/fixtures/basic_gleam_package"), talc:main(), halt().'\'' -extra generate; npm install --prefix "$fixture" --package-lock=false --no-audit --no-fund --silent; node test/integration/verify-package.mjs; (cd "$fixture/npm_dist" && npm pack --dry-run)'
+
 # === CODE QUALITY ===
 
 # Format source code
@@ -75,8 +79,8 @@ clean:
 
 # === CI ===
 
-# Run all CI checks (format, check, test, build)
-ci: format-check check test build-strict
+# Run all CI checks (format, check, test, build, integration)
+ci: format-check check test build-strict test-integration
 
 # Alias for PR checks
 alias pr := ci

@@ -1,0 +1,10 @@
+name = "basic_gleam_package"
+version = "1.0.0"
+description = "Integration test fixture for talc"
+gleam = ">= 1.7.0"
+
+[javascript]
+typescript_declarations = true
+
+[dependencies]
+gleam_stdlib = ">= 0.70.0 and < 1.0.0"

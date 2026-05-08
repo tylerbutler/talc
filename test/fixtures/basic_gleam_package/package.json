@@ -1,0 +1,9 @@
+{
+  "name": "basic-gleam-package-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "true-myth": "^8.0.0"
+  }
+}

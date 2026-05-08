@@ -1,0 +1,3 @@
+package =
+  output_dir = npm_dist
+  use_true_myth = true
