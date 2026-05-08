@@ -1,0 +1,44 @@
+---
+title: talc
+description: npm packaging tool for Gleam libraries.
+template: splash
+hero:
+  tagline: Generate publish-ready npm packages from Gleam JavaScript builds.
+  actions:
+    - text: Get started
+      link: /quick-start/
+      icon: right-arrow
+      variant: primary
+    - text: What is talc?
+      link: /introduction/
+      variant: secondary
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Features
+
+<style lang="css">{`
+  #_top {
+    background: linear-gradient(90deg, var(--sl-color-gray-2), var(--sl-color-accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+`}
+</style>
+
+<CardGrid>
+	<Card title="npm-ready output" icon="rocket">
+		Generate a package directory with `package.json`, compiled `.mjs` files, Gleam's `.d.mts` declarations, and project README and LICENSE files.
+	</Card>
+	<Card title="TypeScript declarations" icon="document">
+		Copy the declarations produced by the Gleam compiler, so TypeScript consumers get types from the same source as the generated JavaScript.
+	</Card>
+	<Card title="true-myth wrappers" icon="approve-check-circle">
+		Optionally generate wrapper modules that convert top-level Gleam `Result` and `Option` values to true-myth `Result` and `Maybe` types.
+	</Card>
+	<Card title="Pack and publish" icon="setting">
+		Validate package configuration, generate `npm_dist/`, run `npm pack`, or publish to npm from the same Gleam-powered workflow.
+	</Card>
+</CardGrid>
