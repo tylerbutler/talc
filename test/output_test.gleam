@@ -1,4 +1,5 @@
 /// Tests for output directory validation and required artifact checking.
+import gleam/list
 import gleam/option.{None, Some}
 import simplifile
 import startest/expect
@@ -42,6 +43,18 @@ pub fn validate_output_dir_rejects_inline_traversal_test() {
   Nil
 }
 
+pub fn validate_output_dir_rejects_trailing_parent_test() {
+  validate_output_dir("foo/..")
+  |> expect.to_be_error()
+  Nil
+}
+
+pub fn validate_output_dir_rejects_nested_trailing_parent_test() {
+  validate_output_dir("a/b/..")
+  |> expect.to_be_error()
+  Nil
+}
+
 // ─── error_to_string ─────────────────────────────────────────────────────────
 
 pub fn error_to_string_unsafe_output_dir_test() {
@@ -72,7 +85,10 @@ pub fn write_rejects_parent_traversal_test() {
 // ─── write: missing module artifacts ────────────────────────────────────────
 
 /// Creates a complete set of build artifacts for a test package + module.
-fn setup_full_artifacts(pkg: String, module: String) -> Nil {
+/// Only creates prelude stubs if the files are absent to avoid contaminating
+/// real build outputs. Returns the paths of any freshly created prelude stubs
+/// so callers can delete them in teardown.
+fn setup_full_artifacts(pkg: String, module: String) -> List(String) {
   let build_pkg = "build/dev/javascript/" <> pkg
   let build_parent = "build/dev/javascript"
   let _ = simplifile.create_directory_all(build_pkg)
@@ -83,9 +99,17 @@ fn setup_full_artifacts(pkg: String, module: String) -> Nil {
     simplifile.write(to: build_pkg <> "/" <> module <> ".d.mts", contents: "")
   let _ = simplifile.write(to: build_pkg <> "/gleam.mjs", contents: "")
   let _ = simplifile.write(to: build_pkg <> "/gleam.d.mts", contents: "")
-  let _ = simplifile.write(to: build_parent <> "/prelude.mjs", contents: "")
-  let _ = simplifile.write(to: build_parent <> "/prelude.d.mts", contents: "")
-  Nil
+  // Create prelude stubs only when absent; return created paths for cleanup.
+  list.filter_map(["prelude.mjs", "prelude.d.mts"], fn(file) {
+    let path = build_parent <> "/" <> file
+    case simplifile.is_file(path) {
+      Ok(True) -> Error(Nil)
+      _ -> {
+        let _ = simplifile.write(to: path, contents: "")
+        Ok(path)
+      }
+    }
+  })
 }
 
 pub fn write_fails_when_module_mjs_missing_test() {
@@ -93,12 +117,12 @@ pub fn write_fails_when_module_mjs_missing_test() {
   let build_pkg = "build/dev/javascript/" <> pkg
   let out = "test_work/" <> pkg <> "_out"
   let _ = simplifile.delete_all([build_pkg, out])
-  setup_full_artifacts(pkg, "mymod")
+  let prelude_stubs = setup_full_artifacts(pkg, "mymod")
   let _ = simplifile.delete_file(build_pkg <> "/mymod.mjs")
 
   let result = output.write(out, pkg, "{}", Some(["mymod"]), [])
 
-  let _ = simplifile.delete_all([build_pkg, out])
+  let _ = simplifile.delete_all([build_pkg, out, ..prelude_stubs])
   result |> expect.to_be_error()
   Nil
 }
@@ -108,12 +132,12 @@ pub fn write_fails_when_module_dts_missing_test() {
   let build_pkg = "build/dev/javascript/" <> pkg
   let out = "test_work/" <> pkg <> "_out"
   let _ = simplifile.delete_all([build_pkg, out])
-  setup_full_artifacts(pkg, "mymod")
+  let prelude_stubs = setup_full_artifacts(pkg, "mymod")
   let _ = simplifile.delete_file(build_pkg <> "/mymod.d.mts")
 
   let result = output.write(out, pkg, "{}", Some(["mymod"]), [])
 
-  let _ = simplifile.delete_all([build_pkg, out])
+  let _ = simplifile.delete_all([build_pkg, out, ..prelude_stubs])
   result |> expect.to_be_error()
   Nil
 }
@@ -123,12 +147,12 @@ pub fn write_fails_when_gleam_support_mjs_missing_test() {
   let build_pkg = "build/dev/javascript/" <> pkg
   let out = "test_work/" <> pkg <> "_out"
   let _ = simplifile.delete_all([build_pkg, out])
-  setup_full_artifacts(pkg, "mymod")
+  let prelude_stubs = setup_full_artifacts(pkg, "mymod")
   let _ = simplifile.delete_file(build_pkg <> "/gleam.mjs")
 
   let result = output.write(out, pkg, "{}", Some(["mymod"]), [])
 
-  let _ = simplifile.delete_all([build_pkg, out])
+  let _ = simplifile.delete_all([build_pkg, out, ..prelude_stubs])
   result |> expect.to_be_error()
   Nil
 }

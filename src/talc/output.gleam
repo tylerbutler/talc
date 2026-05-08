@@ -45,14 +45,14 @@ pub fn error_to_string(error: OutputError) -> String {
 
 /// Validates that an output directory path is safe to use.
 ///
-/// Rejects absolute paths and any path that contains `..` components.
+/// Rejects absolute paths and any path that contains `..` components,
+/// including trailing ones like `foo/..` or `a/b/..`.
 pub fn validate_output_dir(path: String) -> Result(Nil, OutputError) {
-  let unsafe =
-    string.starts_with(path, "/")
-    || path == ".."
-    || string.starts_with(path, "../")
-    || string.contains(path, "/../")
-  case unsafe {
+  let is_absolute = string.starts_with(path, "/")
+  let has_dotdot =
+    string.split(path, "/")
+    |> list.any(fn(component) { component == ".." })
+  case is_absolute || has_dotdot {
     True -> Error(UnsafeOutputDir(path))
     False -> Ok(Nil)
   }
@@ -275,7 +275,7 @@ fn copy_dir_recursive_multi(
             dest_path,
             extensions,
           ))
-          Ok(list.append(sub_files, acc))
+          Ok(list.fold(sub_files, acc, fn(a, f) { [f, ..a] }))
         }
         _ -> {
           let matches =
