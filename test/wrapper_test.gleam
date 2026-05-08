@@ -365,54 +365,6 @@ pub fn nested_module_dts_prelude_path_test() {
   |> expect.to_be_true()
 }
 
-pub fn transparent_native_reexport_mjs_test() {
-  let module =
-    Module(
-      ..empty_module(),
-      functions: dict.from_list([
-        #(
-          "greet",
-          Function(
-            documentation: None,
-            deprecation: None,
-            implementations: js_impl(),
-            parameters: [Parameter(label: Some("name"), type_: string_type())],
-            return: string_type(),
-          ),
-        ),
-      ]),
-    )
-
-  let result = wrapper.generate_module_wrapper(module, "my_lib")
-  result.mjs
-  |> string_contains("export * from \"../my_lib.mjs\"")
-  |> expect.to_be_true()
-}
-
-pub fn transparent_native_reexport_dts_test() {
-  let module =
-    Module(
-      ..empty_module(),
-      functions: dict.from_list([
-        #(
-          "greet",
-          Function(
-            documentation: None,
-            deprecation: None,
-            implementations: js_impl(),
-            parameters: [Parameter(label: Some("name"), type_: string_type())],
-            return: string_type(),
-          ),
-        ),
-      ]),
-    )
-
-  let result = wrapper.generate_module_wrapper(module, "my_lib")
-  result.dts
-  |> string_contains("export * from \"../my_lib.mjs\"")
-  |> expect.to_be_true()
-}
-
 pub fn wrapped_fn_overrides_star_export_test() {
   let module =
     Module(
@@ -435,6 +387,7 @@ pub fn wrapped_fn_overrides_star_export_test() {
     )
 
   let result = wrapper.generate_module_wrapper(module, "my_lib")
+  result.has_wrapped_functions |> expect.to_be_true()
   // star re-export should be present
   result.mjs
   |> string_contains("export * from \"../my_lib.mjs\"")
