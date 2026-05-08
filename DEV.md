@@ -89,7 +89,8 @@ just main
 │   ├── output_test.gleam
 │   ├── wrapper_test.gleam
 │   ├── npm_test.gleam
-│   └── fixtures/                # Integration fixture projects
+│   ├── fixtures/                # Integration fixture projects
+│   └── integration/             # Node.js integration verifiers
 ├── .github/
 │   ├── actions/setup/           # Reusable CI setup
 │   └── workflows/               # CI/CD pipelines

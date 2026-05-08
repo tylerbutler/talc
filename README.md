@@ -20,7 +20,14 @@ gleam add --dev talc
 
 ## Usage
 
-From a Gleam project root (after running `gleam build --target javascript`):
+From a Gleam project root with JavaScript declarations enabled:
+
+```toml
+[javascript]
+typescript_declarations = true
+```
+
+Build the project for JavaScript before running talc:
 
 ```sh
 # Validate configuration without writing files
@@ -88,8 +95,13 @@ ergonomic TypeScript API.
   skipped.
 - `true-myth` is added as a `peerDependency` only when at least one wrapper is
   generated.
-- Set `use_true_myth = false` in `talc.ccl` to disable wrapper generation
-  entirely.
+- Set `package.use_true_myth = false` in `talc.ccl` to disable wrapper
+  generation entirely:
+
+  ```ccl
+  package =
+    use_true_myth = false
+  ```
 
 ### Configuration
 

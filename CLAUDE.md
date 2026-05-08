@@ -39,7 +39,7 @@ just format       # Format code
 just format-check # Check formatting
 just check        # Type check
 just docs         # Build documentation
-just ci           # Run all CI checks (format, check, test, build)
+just ci           # Run all CI checks (format, check, test, build, integration)
 just pr           # Alias for ci (use before PR)
 just main         # Extended checks for main branch
 just clean        # Remove build artifacts
@@ -68,8 +68,10 @@ test/
 ├── output_test.gleam        # Output directory and artifact copy tests
 ├── wrapper_test.gleam       # true-myth wrapper generation tests
 ├── npm_test.gleam           # npm flag building tests
-└── fixtures/                # Integration fixture projects
-    └── basic_gleam_package/ # Used by just test-integration
+├── fixtures/                # Integration fixture projects
+│   └── basic_gleam_package/ # Used by just test-integration
+└── integration/             # Node.js integration verifiers
+    └── verify-package.mjs
 ```
 
 ## Architecture
@@ -106,7 +108,7 @@ case result {
 ### Runtime
 - `gleam_stdlib` - Standard library
 - `tom` - TOML parser (for gleam.toml)
-- `ccl_test_runner` - CCL parser (for talc.ccl)
+- `ccl` - CCL parser (for talc.ccl)
 - `simplifile` - Filesystem operations
 - `gleam_json` - JSON serialization
 - `glint` - CLI framework
