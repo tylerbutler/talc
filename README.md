@@ -4,8 +4,13 @@
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/talc/)
 
 npm packaging tool for Gleam libraries. Reads a compiled Gleam project and produces a
-publish-ready npm package directory with a generated `package.json` and TypeScript `.d.ts`
-declarations.
+publish-ready npm package directory with:
+
+- a generated `package.json` derived from `gleam.toml`
+- compiled `.mjs` files copied from `build/dev/javascript`
+- Gleam compiler-generated `.d.mts` declarations copied from the same build
+- dependency JS artifacts placed next to `dist/` for runtime imports
+- optional true-myth wrapper modules for top-level `Result` and `Option` types
 
 ## Installation
 
@@ -44,30 +49,47 @@ gleam run -m talc -- generate --output-dir my_output
 
 ```
 npm_dist/
-├── package.json         # Generated from gleam.toml
-├── README.md            # Copied from project root (if present)
-├── LICENSE              # Copied from project root (if present)
+├── package.json              # Generated from gleam.toml
+├── README.md                 # Copied from project root (if present)
+├── LICENSE                   # Copied from project root (if present)
+├── prelude.mjs               # Gleam runtime prelude
+├── prelude.d.mts             # Gleam runtime prelude types
+├── gleam_stdlib/             # Dependency JS artifacts (for runtime imports)
+│   └── ...
 └── dist/
-    ├── mylib.mjs        # Compiled JS files from build output
-    ├── mylib.d.ts       # Generated TypeScript declarations
-    └── mylib/
-        ├── module.mjs   # Sub-module JS
-        └── module.d.ts  # Sub-module declarations
+    ├── gleam.mjs             # Gleam support file
+    ├── gleam.d.mts           # Gleam support types
+    ├── mylib.mjs             # Compiled JS from build/dev/javascript
+    ├── mylib.d.mts           # Compiler-generated TypeScript declarations
+    └── _wrapper/             # Optional true-myth wrappers (when use_true_myth = true)
+        ├── mylib.mjs         # Wrapper module converting Result/Option to true-myth
+        └── mylib.d.ts        # Wrapper type declarations
 ```
 
 ### TypeScript Support
 
-talc automatically generates `.d.ts` files for all public modules using the
-Gleam compiler's package interface. The generated types match Gleam's JavaScript
-runtime representation:
+talc copies Gleam's own `.d.mts` declaration files produced by the compiler
+(via `[javascript] typescript_declarations = true` in `gleam.toml`). Because
+the compiler generates both the `.mjs` and `.d.mts` files together, the
+declarations are always accurate — no separate generation step.
 
-- Primitive types → `number`, `string`, `boolean`, `undefined`
-- `List(a)` → `Array<A>`, `Option(a)` → `A | undefined`
-- `Result(a, e)` → discriminated `{ ok: true; value: A } | { ok: false; error: E }`
-- Record types → TypeScript `interface`
-- ADTs → discriminated unions with `Symbol.for("gleam_type")` tags
-- Generic type parameters → TypeScript generics
-- Multi-module packages → sub-path exports in package.json
+Multi-module packages receive sub-path exports in `package.json` for each
+public module.
+
+### true-myth Wrappers
+
+When `use_true_myth = true` (the default), talc generates thin wrapper modules
+for any public module whose functions have top-level `Result` or `Option` in
+their parameter or return types. These wrappers convert to/from
+[true-myth](https://true-myth.js.org/) `Result` and `Maybe` types for a more
+ergonomic TypeScript API.
+
+- Only modules that actually use `Result`/`Option` get a wrapper; others are
+  skipped.
+- `true-myth` is added as a `peerDependency` only when at least one wrapper is
+  generated.
+- Set `use_true_myth = false` in `talc.ccl` to disable wrapper generation
+  entirely.
 
 ### Configuration
 
@@ -90,6 +112,14 @@ package.json =
 peer_dependencies =
   react = >=18
 ```
+
+#### Registry Behaviour
+
+- `package.registry` emits a `publishConfig.registry` field in the generated `package.json`.
+- The `publish` command passes `--registry <url>` to npm unless the user has set a
+  `publishConfig` key in `package.json` extra fields (explicit override takes precedence).
+- An empty registry string is ignored when generating `package.json` and rejected by the
+  `publish` command if it would be used to build flags.
 
 ### CI/CD Integration
 

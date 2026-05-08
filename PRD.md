@@ -1,6 +1,24 @@
-# gleam_npm — npm Publishing Tool for Gleam Libraries
+# gleam_npm — npm Publishing Tool for Gleam Libraries (Historical PRD)
 
-**Version:** 1.0 | **Status:** Draft | **Date:** March 2025
+> **Note:** This document is the original pre-implementation product requirements spec. It was
+> written before the tool was built and uses the working name `gleam_npm` (the package shipped
+> as `talc`). Several details no longer match the current implementation:
+>
+> - The tool is named **talc**, not `gleam_npm`.
+> - The config file is **`talc.ccl`** (CCL format), not `gleam_npm.toml`.
+> - TypeScript declarations are **not generated** by talc. The Gleam compiler emits `.d.mts`
+>   files alongside `.mjs` when `[javascript] typescript_declarations = true` is set in
+>   `gleam.toml`; talc copies those compiler-produced files verbatim.
+> - The CLI is invoked as `gleam run -m talc -- <command>`, not `gleam_npm <command>`.
+> - `engines.node` is not emitted in the generated `package.json`.
+> - The Phase 2 `.d.ts` generation pipeline (IR, type mapper, ADT emitter) was replaced by
+>   directly copying the compiler's `.d.mts` output.
+> - Watch mode (Phase 3) was not implemented.
+> - JSON Schema generation (Phase 3 bonus) was not implemented.
+>
+> For the current design, see [README.md](./README.md) and [CLAUDE.md](./CLAUDE.md).
+
+**Version:** 1.0 | **Status:** Historical | **Date:** March 2025
 
 -----
 

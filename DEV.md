@@ -70,20 +70,32 @@ just main
 ```
 .
 ├── src/
-│   ├── talc.gleam      # Main public API
-│   └── talc/           # Submodules
-│       └── internal/               # Private implementation
+│   ├── talc.gleam               # CLI entry point (generate, check, pack, publish)
+│   ├── talc_interface_ffi.erl   # Erlang FFI: gleam export package-interface
+│   ├── talc_npm_ffi.erl         # Erlang FFI: npm pack/publish
+│   └── talc/                    # Internal submodules
+│       ├── gleam_toml.gleam     # gleam.toml parser
+│       ├── talc_config.gleam    # talc.ccl parser
+│       ├── package_json.gleam   # package.json generation
+│       ├── output.gleam         # File I/O: write output dir, copy artifacts
+│       ├── interface.gleam      # Package interface loader
+│       ├── wrapper.gleam        # true-myth wrapper generator
+│       └── npm.gleam            # npm CLI wrapper
 ├── test/
-│   ├── talc_test.gleam # Tests
-│   └── test_helpers.gleam          # Test utilities
-├── examples/
-│   └── hello_world/                # Example project
+│   ├── talc_test.gleam          # Test runner entry point
+│   ├── gleam_toml_test.gleam
+│   ├── talc_config_test.gleam
+│   ├── package_json_test.gleam
+│   ├── output_test.gleam
+│   ├── wrapper_test.gleam
+│   ├── npm_test.gleam
+│   └── fixtures/                # Integration fixture projects
 ├── .github/
-│   ├── actions/setup/              # Reusable CI setup
-│   └── workflows/                  # CI/CD pipelines
-├── gleam.toml                      # Package configuration
-├── justfile                        # Task definitions
-└── .tool-versions                  # Tool version pinning
+│   ├── actions/setup/           # Reusable CI setup
+│   └── workflows/               # CI/CD pipelines
+├── gleam.toml                   # Package configuration
+├── justfile                     # Task definitions
+└── .tool-versions               # Tool version pinning
 ```
 
 ## Code Style
@@ -145,16 +157,16 @@ pub fn parse(input: String) -> Result(Value, ParseError)
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all unit tests
 just test
 
-# Run with verbose output
-gleam test -- --verbose
+# Run fixture-based integration test (requires npm)
+just test-integration
 ```
 
 ### Writing Tests
 
-Tests use the `gleeunit` framework:
+Tests use the `startest` framework:
 
 ```gleam
 import startest/expect
@@ -163,24 +175,6 @@ import talc
 pub fn my_feature_test() {
   talc.some_function("input")
   |> expect.to_equal(expected_output)
-}
-
-pub fn error_case_test() {
-  talc.parse("invalid")
-  |> should.be_error()
-}
-```
-
-### Test Helpers
-
-Use `test/test_helpers.gleam` for shared test utilities:
-
-```gleam
-import test_helpers
-
-pub fn with_fixture_test() {
-  let fixture = test_helpers.sample_data()
-  // ... test with fixture
 }
 ```
 
@@ -241,11 +235,8 @@ just build
 ### Test Failures
 
 ```bash
-# Run a specific test
+# Run a specific test file
 gleam test -- --filter "test_name"
-
-# Run with more output
-gleam test -- --verbose
 ```
 
 ### Dependency Issues

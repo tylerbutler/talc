@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-An npm packaging tool for Gleam libraries, targeting the Erlang (BEAM) runtime. Reads a compiled
-Gleam project and produces a publish-ready npm package directory with a generated `package.json`,
-Gleam's native `.d.mts` type declarations, and optional true-myth wrapper modules for
-Result/Option types. Provides workflow commands (`pack`, `publish`).
+An npm packaging tool for Gleam libraries. Runs on Erlang/BEAM. Reads Gleam JavaScript build
+output (`build/dev/javascript`) and produces a publish-ready npm package directory with a
+generated `package.json`, Gleam's native `.d.mts` type declarations, and optional true-myth
+wrapper modules for Result/Option types. Provides workflow commands (`pack`, `publish`).
 
 ### Type Strategy
 
@@ -59,19 +59,17 @@ src/
     ├── output.gleam         # File I/O: write output dir, copy .mjs/.d.mts, write wrappers
     ├── interface.gleam      # Package interface loader (gleam CLI → gleam_package_interface)
     ├── wrapper.gleam        # true-myth wrapper .mjs/.d.ts generator for Result/Option
-    ├── typescript.gleam     # (legacy) Gleam Type → TypeScript type string mapper
-    ├── dts.gleam            # (legacy) .d.ts file emitter per module
     └── npm.gleam            # npm CLI wrapper (pack, publish, flag building)
 test/
 ├── talc_test.gleam          # Test runner entry point
 ├── gleam_toml_test.gleam    # gleam.toml parsing tests
 ├── talc_config_test.gleam   # talc.ccl parsing tests (includes use_true_myth)
 ├── package_json_test.gleam  # JSON generation tests
+├── output_test.gleam        # Output directory and artifact copy tests
 ├── wrapper_test.gleam       # true-myth wrapper generation tests
-├── typescript_test.gleam    # (legacy) Type mapping tests
-├── dts_test.gleam           # (legacy) .d.ts emission tests
 ├── npm_test.gleam           # npm flag building tests
-└── test_helpers.gleam       # Shared test utilities
+└── fixtures/                # Integration fixture projects
+    └── basic_gleam_package/ # Used by just test-integration
 ```
 
 ## Architecture
