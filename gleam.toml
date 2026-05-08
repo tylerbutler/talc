@@ -6,8 +6,13 @@ repository = { type = "github", user = "tylerbutler", repo = "talc" }
 gleam = ">= 1.7.0"
 
 internal_modules = [
-  "talc/internal",
-  "talc/internal/*",
+  "talc/gleam_toml",
+  "talc/interface",
+  "talc/npm",
+  "talc/output",
+  "talc/package_json",
+  "talc/talc_config",
+  "talc/wrapper",
 ]
 
 [dependencies]

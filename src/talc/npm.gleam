@@ -6,11 +6,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 
-/// Result of running an npm command.
-pub type NpmResult {
-  NpmResult(exit_code: Int, output: String)
-}
-
 /// Errors from npm operations.
 pub type NpmError {
   NpmFailed(command: String, exit_code: Int, output: String)

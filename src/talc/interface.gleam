@@ -5,8 +5,7 @@
 import gleam/dict
 import gleam/int
 import gleam/json
-import gleam/list
-import gleam/package_interface.{type Module, type Package}
+import gleam/package_interface.{type Package}
 import gleam/result
 import gleam/string
 import simplifile
@@ -65,31 +64,6 @@ pub fn load() -> Result(Package, String) {
 /// Returns the list of public module names from a package.
 pub fn public_module_names(package: Package) -> List(String) {
   dict.keys(package.modules)
-}
-
-/// Returns a specific module from the package, if it exists.
-pub fn get_module(package: Package, name: String) -> Result(Module, Nil) {
-  dict.get(package.modules, name)
-}
-
-/// Checks if a module can run on JavaScript based on its functions.
-/// A module is JS-compatible if it has at least one function that
-/// can run on JavaScript.
-pub fn module_has_js_support(module: Module) -> Bool {
-  dict.values(module.functions)
-  |> list.any(fn(func) { func.implementations.can_run_on_javascript })
-}
-
-/// Converts a module name to a relative .mjs path.
-/// e.g. "birch/handler" → "birch/handler.mjs"
-pub fn module_to_mjs_path(module_name: String) -> String {
-  string.replace(module_name, "/", "/") <> ".mjs"
-}
-
-/// Converts a module name to a relative .d.ts path.
-/// e.g. "birch/handler" → "birch/handler.d.ts"
-pub fn module_to_dts_path(module_name: String) -> String {
-  string.replace(module_name, "/", "/") <> ".d.ts"
 }
 
 // -- Internals --
