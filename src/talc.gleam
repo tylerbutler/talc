@@ -73,7 +73,7 @@ fn generate_command() -> glint.Command(Nil) {
   }
 
   case run_generate(output_dir_override) {
-    Ok(#(files, warnings)) -> {
+    Ok(#(files, warnings, _talc)) -> {
       io.println("✓ Generated npm package:")
       list.each(files, fn(f) { io.println("  " <> f) })
       print_warnings(warnings)
@@ -172,7 +172,7 @@ fn publish_command() -> glint.Command(Nil) {
 
 fn run_generate(
   output_dir_override: Option(String),
-) -> Result(#(List(String), List(String)), String) {
+) -> Result(#(List(String), List(String), talc_config.TalcConfig), String) {
   use gleam_config <- try_with_message(
     gleam_toml.read(from: "."),
     gleam_config_error_to_string,
@@ -251,15 +251,17 @@ fn run_generate(
     |> map_error(output.error_to_string),
   )
 
-  Ok(#(written, all_warnings))
+  Ok(#(written, all_warnings, effective_talc))
 }
 
 fn run_pack(
   output_dir_override: Option(String),
 ) -> Result(#(String, List(String)), String) {
-  use #(_files, warnings) <- try_ok(run_generate(output_dir_override))
+  use #(_files, warnings, effective_talc) <- try_ok(run_generate(
+    output_dir_override,
+  ))
 
-  let output_dir = resolve_output_dir(output_dir_override)
+  let output_dir = effective_talc.package.output_dir
 
   use tarball <- try_ok(npm.pack(output_dir) |> map_error(npm.error_to_string))
 
@@ -270,19 +272,20 @@ fn run_publish(
   output_dir_override: Option(String),
   flags: List(String),
 ) -> Result(#(String, List(String)), String) {
-  use #(_files, warnings) <- try_ok(run_generate(output_dir_override))
+  use #(_files, warnings, effective_talc) <- try_ok(run_generate(
+    output_dir_override,
+  ))
 
-  use talc <- try_ok(talc_config.read(from: "."))
+  let output_dir = effective_talc.package.output_dir
 
-  let output_dir = case output_dir_override {
-    Some(dir) -> dir
-    None -> talc.package.output_dir
-  }
+  let extra_field_keys =
+    list.map(effective_talc.extra_fields, fn(pair) { pair.0 })
 
-  let registry_flags = case talc.package.registry {
-    Some(url) -> ["--registry", url]
-    None -> []
-  }
+  use registry_flags <- try_ok(npm.build_registry_flags(
+    effective_talc.package.registry,
+    extra_field_keys,
+  ))
+
   let all_flags = list.append(flags, registry_flags)
 
   use npm_output <- try_ok(
@@ -290,18 +293,6 @@ fn run_publish(
   )
 
   Ok(#(npm_output, warnings))
-}
-
-/// Resolves the effective output directory from optional override and config.
-fn resolve_output_dir(override: Option(String)) -> String {
-  case override {
-    Some(dir) -> dir
-    None ->
-      case talc_config.read(from: ".") {
-        Ok(talc) -> talc.package.output_dir
-        Error(_) -> "npm_dist"
-      }
-  }
 }
 
 fn run_check() -> Result(String, String) {

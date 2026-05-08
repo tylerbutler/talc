@@ -1,3 +1,4 @@
+import gleam/option
 import startest/expect
 import talc/npm
 
@@ -86,4 +87,36 @@ pub fn build_publish_flags_access_private_test() {
 pub fn build_publish_flags_both_invalid_tag_wins_test() {
   npm.build_publish_flags(False, Ok("bad tag!"), Ok("private"), False)
   |> expect.to_equal(Error(npm.InvalidTag("bad tag!")))
+}
+
+// -- build_registry_flags tests --
+
+pub fn build_registry_flags_no_registry_test() {
+  npm.build_registry_flags(option.None, [])
+  |> expect.to_equal(Ok([]))
+}
+
+pub fn build_registry_flags_with_registry_test() {
+  npm.build_registry_flags(option.Some("https://registry.example.com"), [])
+  |> expect.to_equal(Ok(["--registry", "https://registry.example.com"]))
+}
+
+pub fn build_registry_flags_publishconfig_override_test() {
+  npm.build_registry_flags(option.Some("https://registry.example.com"), [
+    "publishConfig",
+  ])
+  |> expect.to_equal(Ok([]))
+}
+
+pub fn build_registry_flags_empty_url_test() {
+  npm.build_registry_flags(option.Some(""), [])
+  |> expect.to_equal(Error("Registry URL must not be empty"))
+}
+
+pub fn build_registry_flags_other_extra_fields_no_override_test() {
+  npm.build_registry_flags(option.Some("https://npm.pkg.github.com"), [
+    "license",
+    "author",
+  ])
+  |> expect.to_equal(Ok(["--registry", "https://npm.pkg.github.com"]))
 }

@@ -3,6 +3,7 @@
 /// Used by the `pack` and `publish` commands to wrap `npm pack` and
 /// `npm publish` with pre-flight checks and flag pass-through.
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/string
 
 /// Result of running an npm command.
@@ -128,6 +129,32 @@ pub fn build_publish_flags(
           }
           Ok(flags)
         }
+      }
+  }
+}
+
+/// Builds the `--registry <url>` flags for npm publish.
+///
+/// Returns `["--registry", url]` only when:
+/// - registry is `Some(non-empty-url)`, AND
+/// - `extra_field_keys` does NOT contain `"publishConfig"`.
+///
+/// When the user supplies a `publishConfig` via `extra_fields`, their
+/// explicit override takes precedence and no `--registry` flag is appended
+/// (npm CLI `--registry` would otherwise override `publishConfig.registry`).
+///
+/// Returns `Error` when the registry URL is an empty string.
+pub fn build_registry_flags(
+  registry: Option(String),
+  extra_field_keys: List(String),
+) -> Result(List(String), String) {
+  case registry {
+    None -> Ok([])
+    Some("") -> Error("Registry URL must not be empty")
+    Some(url) ->
+      case list.contains(extra_field_keys, "publishConfig") {
+        True -> Ok([])
+        False -> Ok(["--registry", url])
       }
   }
 }
