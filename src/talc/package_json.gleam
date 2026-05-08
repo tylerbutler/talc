@@ -7,6 +7,7 @@ import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import talc/gleam_toml.{type GleamConfig}
@@ -14,8 +15,10 @@ import talc/talc_config.{type TalcConfig}
 
 /// Errors that can occur during package.json generation.
 pub type GenerationError {
-  MissingName
-  MissingVersion
+  /// The package root module (matching gleam.toml `name`) was not found in the
+  /// provided module list. This means the JavaScript build output is missing the
+  /// root module file that the root export would point to.
+  MissingRootModule(String)
 }
 
 /// Generates a package.json JSON string from Gleam and talc configs.
@@ -40,60 +43,71 @@ pub fn generate_with_modules(
   module_names: List(String),
   wrapped_modules: Set(String),
 ) -> Result(String, GenerationError) {
-  let npm_name = build_npm_name(gleam_config.name, talc_config)
-
-  let base_fields = [
-    #("name", json.string(npm_name)),
-    #("version", json.string(gleam_config.version)),
-    #("type", json.string("module")),
-  ]
-
-  let description_fields = case gleam_config.description {
-    "" -> []
-    desc -> [#("description", json.string(desc))]
+  // When a module list is provided, require the root module to be present.
+  case module_names {
+    [] -> Ok(Nil)
+    _ ->
+      case list.contains(module_names, gleam_config.name) {
+        True -> Ok(Nil)
+        False -> Error(MissingRootModule(gleam_config.name))
+      }
   }
+  |> result.try(fn(_) {
+    let npm_name = build_npm_name(gleam_config.name, talc_config)
 
-  let license_fields = case gleam_config.licences {
-    [first, ..] -> [#("license", json.string(first))]
-    [] -> []
-  }
+    let base_fields = [
+      #("name", json.string(npm_name)),
+      #("version", json.string(gleam_config.version)),
+      #("type", json.string("module")),
+    ]
 
-  let esm_fields =
-    build_esm_fields(
-      gleam_config.name,
-      module_names,
-      talc_config.use_true_myth,
-      wrapped_modules,
-    )
-  let repository_fields = build_repository_fields(gleam_config)
-  let extra_fields = build_extra_fields(talc_config)
-  let peer_dep_fields =
-    build_peer_dep_fields(
-      talc_config,
-      talc_config.use_true_myth,
-      wrapped_modules,
-    )
+    let description_fields = case gleam_config.description {
+      "" -> []
+      desc -> [#("description", json.string(desc))]
+    }
 
-  // Extra fields from [package.json] override auto-generated fields
-  let extra_keys =
-    extra_fields
-    |> list.map(fn(pair) { #(pair.0, Nil) })
-    |> dict.from_list()
+    let license_fields = case gleam_config.licences {
+      [first, ..] -> [#("license", json.string(first))]
+      [] -> []
+    }
 
-  let auto_fields =
-    list.flatten([
-      base_fields,
-      description_fields,
-      license_fields,
-      esm_fields,
-      repository_fields,
-      peer_dep_fields,
-    ])
-    |> list.filter(fn(pair) { !dict.has_key(extra_keys, pair.0) })
+    let esm_fields =
+      build_esm_fields(
+        gleam_config.name,
+        module_names,
+        talc_config.use_true_myth,
+        wrapped_modules,
+      )
+    let repository_fields = build_repository_fields(gleam_config)
+    let extra_fields = build_extra_fields(talc_config)
+    let peer_dep_fields =
+      build_peer_dep_fields(
+        talc_config,
+        talc_config.use_true_myth,
+        wrapped_modules,
+      )
 
-  let all_fields = list.flatten([auto_fields, extra_fields])
+    // Extra fields from [package.json] override auto-generated fields
+    let extra_keys =
+      extra_fields
+      |> list.map(fn(pair) { #(pair.0, Nil) })
+      |> dict.from_list()
 
-  Ok(json.to_string(json.object(all_fields)))
+    let auto_fields =
+      list.flatten([
+        base_fields,
+        description_fields,
+        license_fields,
+        esm_fields,
+        repository_fields,
+        peer_dep_fields,
+      ])
+      |> list.filter(fn(pair) { !dict.has_key(extra_keys, pair.0) })
+
+    let all_fields = list.flatten([auto_fields, extra_fields])
+
+    Ok(json.to_string(json.object(all_fields)))
+  })
 }
 
 /// Builds the npm package name, optionally with a scope prefix.

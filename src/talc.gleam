@@ -339,8 +339,8 @@ fn gleam_config_error_to_string(error: gleam_toml.ConfigError) -> String {
 
 fn generation_error_to_string(error: package_json.GenerationError) -> String {
   case error {
-    package_json.MissingName -> "Package name is required"
-    package_json.MissingVersion -> "Package version is required"
+    package_json.MissingRootModule(module) ->
+      "Package root module not found in JavaScript build output: " <> module
   }
 }
 

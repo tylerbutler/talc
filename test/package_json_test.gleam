@@ -304,3 +304,13 @@ pub fn generate_native_paths_when_not_wrapped_test() {
   result |> string_contains("./dist/my_lib.mjs") |> expect.to_be_true()
   result |> string_contains("./dist/my_lib.d.mts") |> expect.to_be_true()
 }
+
+pub fn generate_with_modules_requires_root_module_test() {
+  let gleam = test_gleam_config()
+  let talc = test_talc_config()
+  // module_names is non-empty but does not contain "my_lib" (the package root)
+  let result =
+    package_json.generate_with_modules(gleam, talc, ["my_lib/child"], set.new())
+  let err = result |> expect.to_be_error()
+  err |> expect.to_equal(package_json.MissingRootModule("my_lib"))
+}
