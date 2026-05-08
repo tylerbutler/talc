@@ -30,6 +30,9 @@ typescript_declarations = true
 Build the project for JavaScript before running talc:
 
 ```sh
+# Build the project for JavaScript
+gleam build --target javascript
+
 # Validate configuration without writing files
 gleam run -m talc -- check
 
