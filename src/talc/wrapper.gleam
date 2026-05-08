@@ -87,10 +87,6 @@ fn generate_mjs(
   functions: List(#(String, Function, Bool)),
   module_name: String,
 ) -> String {
-  let passthrough =
-    list.filter(functions, fn(t) { !t.2 })
-    |> list.map(fn(t) { t.0 })
-
   let wrapped = list.filter(functions, fn(t) { t.2 })
 
   let needs_result =
@@ -105,7 +101,8 @@ fn generate_mjs(
       || list.any({ t.1 }.parameters, fn(p) { is_option_type(p.type_) })
     })
 
-  let relative_module = "../" <> module_name <> ".mjs"
+  let prefix = relative_prefix(module_name)
+  let relative_module = prefix <> module_name <> ".mjs"
 
   // Build imports
   let mut_imports = []
@@ -120,7 +117,11 @@ fn generate_mjs(
   let mut_imports = case gleam_imports {
     [] -> mut_imports
     imports -> [
-      "import { " <> string.join(imports, ", ") <> " } from \"../gleam.mjs\";",
+      "import { "
+        <> string.join(imports, ", ")
+        <> " } from \""
+        <> prefix
+        <> "gleam.mjs\";",
       ..mut_imports
     ]
   }
@@ -144,11 +145,7 @@ fn generate_mjs(
       safe_name <> " as _" <> safe_name
     })
 
-  // Re-exports for passthrough functions
-  let passthrough_names = list.map(passthrough, escape_js_reserved)
-
-  let all_source_imports = list.append(aliased, passthrough_names)
-  let mut_imports = case all_source_imports {
+  let mut_imports = case aliased {
     [] -> mut_imports
     imports -> [
       "import { "
@@ -164,11 +161,8 @@ fn generate_mjs(
     list.reverse(mut_imports)
     |> string.join("\n")
 
-  // Re-export passthrough
-  let reexport = case passthrough_names {
-    [] -> ""
-    names -> "\nexport { " <> string.join(names, ", ") <> " };\n"
-  }
+  // Transparent native re-export (covers non-function exports, constants, types)
+  let reexport = "\nexport * from \"" <> relative_module <> "\";\n"
 
   // Wrapper function bodies
   let wrapper_fns =
@@ -251,10 +245,6 @@ fn generate_dts(
   functions: List(#(String, Function, Bool)),
   module_name: String,
 ) -> String {
-  let passthrough =
-    list.filter(functions, fn(t) { !t.2 })
-    |> list.map(fn(t) { t.0 })
-
   let wrapped = list.filter(functions, fn(t) { t.2 })
 
   let needs_result =
@@ -269,7 +259,8 @@ fn generate_dts(
       || list.any({ t.1 }.parameters, fn(p) { is_option_type(p.type_) })
     })
 
-  let relative_module = "../" <> module_name <> ".mjs"
+  let prefix = relative_prefix(module_name)
+  let relative_module = prefix <> module_name <> ".mjs"
 
   // Scan wrapped functions for Gleam prelude types that need importing
   let all_wrapped_types =
@@ -290,7 +281,9 @@ fn generate_dts(
     types -> [
       "import type { "
         <> string.join(types, ", ")
-        <> " } from \"../gleam.d.mts\";",
+        <> " } from \""
+        <> prefix
+        <> "gleam.d.mts\";",
       ..mut_imports
     ]
   }
@@ -307,17 +300,8 @@ fn generate_dts(
     list.reverse(mut_imports)
     |> string.join("\n")
 
-  // Re-export passthrough
-  let passthrough_names = list.map(passthrough, escape_js_reserved)
-  let reexport = case passthrough_names {
-    [] -> ""
-    names ->
-      "\nexport { "
-      <> string.join(names, ", ")
-      <> " } from \""
-      <> relative_module
-      <> "\";\n"
-  }
+  // Transparent native re-export
+  let reexport = "\nexport * from \"" <> relative_module <> "\";\n"
 
   // Wrapped function declarations
   let wrapper_decls =
@@ -572,4 +556,12 @@ fn escape_js_reserved(name: String) -> String {
     | "then" -> name <> "$"
     _ -> name
   }
+}
+
+/// Computes the relative path prefix for a wrapper module.
+/// A root module like "my_lib" is wrapped at "_wrapper/my_lib.mjs" → prefix "../".
+/// A nested module "my_lib/nested" is wrapped at "_wrapper/my_lib/nested.mjs" → prefix "../../".
+fn relative_prefix(module_name: String) -> String {
+  let depth = list.length(string.split(module_name, "/"))
+  string.repeat("../", depth)
 }

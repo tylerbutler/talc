@@ -77,9 +77,13 @@ pub fn passthrough_function_test() {
 
   let result = wrapper.generate_module_wrapper(module, "my_lib")
   result.has_wrapped_functions |> expect.to_be_false()
-  // Both mjs and dts should just re-export
-  result.mjs |> string_contains("export { greet }") |> expect.to_be_true()
-  result.dts |> string_contains("export { greet }") |> expect.to_be_true()
+  // Both mjs and dts should use native transparent re-export
+  result.mjs
+  |> string_contains("export * from \"../my_lib.mjs\"")
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains("export * from \"../my_lib.mjs\"")
+  |> expect.to_be_true()
 }
 
 pub fn wrap_result_return_test() {
@@ -202,8 +206,10 @@ pub fn mixed_passthrough_and_wrapped_test() {
 
   let result = wrapper.generate_module_wrapper(module, "my_lib")
   result.has_wrapped_functions |> expect.to_be_true()
-  // add should be re-exported
-  result.mjs |> string_contains("export { add }") |> expect.to_be_true()
+  // native re-export covers add (and all other non-wrapped exports)
+  result.mjs
+  |> string_contains("export * from \"../my_lib.mjs\"")
+  |> expect.to_be_true()
   // safe_divide should be wrapped
   result.mjs
   |> string_contains("export function safe_divide")
@@ -296,6 +302,153 @@ pub fn prelude_type_import_test() {
   |> string_contains("import type { List } from \"../gleam.d.mts\"")
   |> expect.to_be_true()
   result.dts |> string_contains("List<string>") |> expect.to_be_true()
+}
+
+pub fn nested_module_mjs_paths_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "parse_int",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [Parameter(label: Some("s"), type_: string_type())],
+            return: result_type(int_type(), nil_type()),
+          ),
+        ),
+      ]),
+    )
+
+  let result = wrapper.generate_module_wrapper(module, "my_lib/nested")
+  result.mjs
+  |> string_contains("../../my_lib/nested.mjs")
+  |> expect.to_be_true()
+  result.mjs
+  |> string_contains("../../gleam.mjs")
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains("../../my_lib/nested.mjs")
+  |> expect.to_be_true()
+}
+
+pub fn nested_module_dts_prelude_path_test() {
+  let list_type =
+    Named(name: "List", package: "", module: "gleam", parameters: [
+      string_type(),
+    ])
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "find_in_list",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("items"), type_: list_type),
+              Parameter(label: Some("key"), type_: string_type()),
+            ],
+            return: option_type(string_type()),
+          ),
+        ),
+      ]),
+    )
+
+  let result = wrapper.generate_module_wrapper(module, "my_lib/nested")
+  result.dts
+  |> string_contains("../../gleam.d.mts")
+  |> expect.to_be_true()
+}
+
+pub fn transparent_native_reexport_mjs_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "greet",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [Parameter(label: Some("name"), type_: string_type())],
+            return: string_type(),
+          ),
+        ),
+      ]),
+    )
+
+  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  result.mjs
+  |> string_contains("export * from \"../my_lib.mjs\"")
+  |> expect.to_be_true()
+}
+
+pub fn transparent_native_reexport_dts_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "greet",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [Parameter(label: Some("name"), type_: string_type())],
+            return: string_type(),
+          ),
+        ),
+      ]),
+    )
+
+  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  result.dts
+  |> string_contains("export * from \"../my_lib.mjs\"")
+  |> expect.to_be_true()
+}
+
+pub fn wrapped_fn_overrides_star_export_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "safe_divide",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("a"), type_: int_type()),
+              Parameter(label: Some("b"), type_: int_type()),
+            ],
+            return: result_type(int_type(), string_type()),
+          ),
+        ),
+      ]),
+    )
+
+  let result = wrapper.generate_module_wrapper(module, "my_lib")
+  // star re-export should be present
+  result.mjs
+  |> string_contains("export * from \"../my_lib.mjs\"")
+  |> expect.to_be_true()
+  // explicit wrapper function should also be present, overriding star for this name
+  result.mjs
+  |> string_contains("export function safe_divide")
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains("export * from \"../my_lib.mjs\"")
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains("export declare function safe_divide")
+  |> expect.to_be_true()
 }
 
 fn string_contains(haystack: String, needle: String) -> Bool {
