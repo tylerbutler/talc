@@ -300,18 +300,31 @@ fn run_check() -> Result(String, String) {
   )
   use talc <- try_ok(talc_config.read(from: "."))
 
-  // Try to load package interface for richer check output
-  let interface_info = case interface.load() {
+  // When the package interface is available, validate with the real module
+  // list so MissingRootModule failures surface here the same as in generate.
+  case interface.load() {
     Ok(package) -> {
-      let module_count = list.length(interface.public_module_names(package))
-      "\n✓ Package interface: "
-      <> int.to_string(module_count)
-      <> " public module(s)"
+      let module_names = interface.public_module_names(package)
+      let module_count = list.length(module_names)
+      let interface_info =
+        "\n✓ Package interface: "
+        <> int.to_string(module_count)
+        <> " public module(s)"
+      let report =
+        package_json.check_report_with_modules(
+          gleam_config,
+          talc,
+          module_names,
+          set.new(),
+        )
+      Ok(report <> interface_info)
     }
-    Error(_) -> "\n⚠ Package interface not available (run `gleam build` first)"
+    Error(_) -> {
+      let interface_info =
+        "\n⚠ Package interface not available (run `gleam build` first)"
+      Ok(package_json.check_report(gleam_config, talc) <> interface_info)
+    }
   }
-
-  Ok(package_json.check_report(gleam_config, talc) <> interface_info)
 }
 
 fn print_warnings(warnings: List(String)) {

@@ -314,3 +314,79 @@ pub fn generate_with_modules_requires_root_module_test() {
   let err = result |> expect.to_be_error()
   err |> expect.to_equal(package_json.MissingRootModule("my_lib"))
 }
+
+pub fn generate_with_modules_full_output_overrides_bypass_root_module_test() {
+  let gleam = test_gleam_config()
+  // extra_fields overrides all four entrypoint/export fields
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #("exports", json.object([#(".", json.string("./custom.mjs"))])),
+      #("main", json.string("./custom.mjs")),
+      #("module", json.string("./custom.mjs")),
+      #("types", json.string("./custom.d.ts")),
+    ])
+  // module_names is non-empty but root module is absent — should still succeed
+  let result =
+    package_json.generate_with_modules(gleam, talc, ["my_lib/child"], set.new())
+  result |> expect.to_be_ok()
+  Nil
+}
+
+pub fn generate_with_modules_partial_overrides_still_fail_test() {
+  let gleam = test_gleam_config()
+  // Only "exports" is overridden — not all four fields
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #("exports", json.object([#(".", json.string("./custom.mjs"))])),
+    ])
+  let result =
+    package_json.generate_with_modules(gleam, talc, ["my_lib/child"], set.new())
+  let err = result |> expect.to_be_error()
+  err |> expect.to_equal(package_json.MissingRootModule("my_lib"))
+}
+
+pub fn generate_with_modules_no_overrides_still_fail_test() {
+  let gleam = test_gleam_config()
+  let talc = test_talc_config()
+  let result =
+    package_json.generate_with_modules(
+      gleam,
+      talc,
+      ["my_lib/child", "my_lib/other"],
+      set.new(),
+    )
+  let err = result |> expect.to_be_error()
+  err |> expect.to_equal(package_json.MissingRootModule("my_lib"))
+}
+
+pub fn check_report_with_modules_success_test() {
+  let gleam = test_gleam_config()
+  let talc = test_talc_config()
+
+  let report =
+    package_json.check_report_with_modules(
+      gleam,
+      talc,
+      ["my_lib", "my_lib/sub"],
+      set.new(),
+    )
+  report |> string_contains("✓ Package: my_lib") |> expect.to_be_true()
+  report |> string_contains("✓ Version: 1.0.0") |> expect.to_be_true()
+}
+
+pub fn check_report_with_modules_missing_root_fails_test() {
+  let gleam = test_gleam_config()
+  let talc = test_talc_config()
+
+  // module_names does not include "my_lib" root
+  let report =
+    package_json.check_report_with_modules(
+      gleam,
+      talc,
+      ["my_lib/child"],
+      set.new(),
+    )
+  report
+  |> string_contains("Failed to generate package.json")
+  |> expect.to_be_true()
+}

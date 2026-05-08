@@ -13,12 +13,27 @@ import gleam/string
 import talc/gleam_toml.{type GleamConfig}
 import talc/talc_config.{type TalcConfig}
 
+// Fields that, when all overridden together via extra_fields, mean the
+// auto-generated root-module entrypoints will not be emitted at all.
+const output_entrypoint_fields = ["exports", "main", "module", "types"]
+
 /// Errors that can occur during package.json generation.
 pub type GenerationError {
   /// The package root module (matching gleam.toml `name`) was not found in the
   /// provided module list. This means the JavaScript build output is missing the
   /// root module file that the root export would point to.
   MissingRootModule(String)
+}
+
+/// Returns True when `talc_config.extra_fields` overrides every field that
+/// the generator would derive from the root module (`exports`, `main`,
+/// `module`, and `types`).  When all four are overridden the auto-generated
+/// root entrypoint paths are unused, so a missing root module is harmless.
+pub fn has_full_output_overrides(talc_config: TalcConfig) -> Bool {
+  let extra_keys =
+    talc_config.extra_fields
+    |> list.map(fn(pair) { pair.0 })
+  list.all(output_entrypoint_fields, fn(key) { list.contains(extra_keys, key) })
 }
 
 /// Generates a package.json JSON string from Gleam and talc configs.
@@ -43,11 +58,16 @@ pub fn generate_with_modules(
   module_names: List(String),
   wrapped_modules: Set(String),
 ) -> Result(String, GenerationError) {
-  // When a module list is provided, require the root module to be present.
+  // When a module list is provided, require the root module to be present —
+  // unless extra_fields fully overrides all auto-generated entrypoint fields,
+  // in which case the root-module paths are never emitted.
   case module_names {
     [] -> Ok(Nil)
     _ ->
-      case list.contains(module_names, gleam_config.name) {
+      case
+        has_full_output_overrides(talc_config)
+        || list.contains(module_names, gleam_config.name)
+      {
         True -> Ok(Nil)
         False -> Error(MissingRootModule(gleam_config.name))
       }
@@ -297,8 +317,28 @@ pub fn check_report(
   gleam_config: GleamConfig,
   talc_config: TalcConfig,
 ) -> String {
+  check_report_with_modules(gleam_config, talc_config, [], set.new())
+}
+
+/// Generates a pretty-printed validation report using the given module list.
+///
+/// Passes `module_names` to `generate_with_modules` so that root-module
+/// validation is performed the same way `generate` would perform it at
+/// actual package generation time.
+pub fn check_report_with_modules(
+  gleam_config: GleamConfig,
+  talc_config: TalcConfig,
+  module_names: List(String),
+  wrapped_modules: Set(String),
+) -> String {
   let validation = validate(gleam_config)
-  let generation = generate(gleam_config, talc_config)
+  let generation =
+    generate_with_modules(
+      gleam_config,
+      talc_config,
+      module_names,
+      wrapped_modules,
+    )
 
   case validation, generation {
     Ok(_), Ok(json_str) -> {
