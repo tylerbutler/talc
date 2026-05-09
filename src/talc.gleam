@@ -184,7 +184,7 @@ fn run_generate(
     None -> talc.package.output_dir
   }
 
-  let effective_talc =
+  let effective_talc_pre =
     talc_config.TalcConfig(
       ..talc,
       package: talc_config.PackageConfig(
@@ -192,6 +192,9 @@ fn run_generate(
         output_dir: effective_output_dir,
       ),
     )
+
+  let #(effective_talc, sanitize_warnings) =
+    package_json.sanitize_extras(effective_talc_pre)
 
   // Load package interface for module discovery and function signatures
   use package <- try_ok(interface.load())
@@ -251,7 +254,20 @@ fn run_generate(
     |> map_error(output.error_to_string),
   )
 
-  Ok(#(written, all_warnings, effective_talc))
+  Ok(#(written, list.append(sanitize_warnings, all_warnings), effective_talc))
+}
+
+/// Returns `["--ignore-scripts"]` unless the user has explicitly opted in to
+/// lifecycle scripts via `package.unsafe_allow_scripts = true` in talc.ccl.
+/// Used by both `pack` and `publish` to prevent untrusted lifecycle code from
+/// running with credentials available.
+fn ignore_scripts_flags(
+  effective_talc: talc_config.TalcConfig,
+) -> List(String) {
+  case effective_talc.package.unsafe_allow_scripts {
+    True -> []
+    False -> ["--ignore-scripts"]
+  }
 }
 
 fn run_pack(
@@ -263,7 +279,10 @@ fn run_pack(
 
   let output_dir = effective_talc.package.output_dir
 
-  use tarball <- try_ok(npm.pack(output_dir) |> map_error(npm.error_to_string))
+  use tarball <- try_ok(
+    npm.pack(output_dir, ignore_scripts_flags(effective_talc))
+    |> map_error(npm.error_to_string),
+  )
 
   Ok(#(tarball, warnings))
 }
@@ -286,7 +305,10 @@ fn run_publish(
     extra_field_keys,
   ))
 
-  let all_flags = list.append(flags, registry_flags)
+  let all_flags =
+    flags
+    |> list.append(registry_flags)
+    |> list.append(ignore_scripts_flags(effective_talc))
 
   use npm_output <- try_ok(
     npm.publish(output_dir, all_flags) |> map_error(npm.error_to_string),

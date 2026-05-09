@@ -11,11 +11,39 @@ import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import talc/gleam_toml.{type GleamConfig}
-import talc/talc_config.{type TalcConfig}
+import talc/talc_config.{type TalcConfig, TalcConfig}
 
 // Fields that, when all overridden together via extra_fields, mean the
 // auto-generated root-module entrypoints will not be emitted at all.
 const output_entrypoint_fields = ["exports", "main", "module", "types"]
+
+/// Strips `extra_fields` entries that would inject npm lifecycle code into
+/// the generated package.json unless the user has explicitly opted in via
+/// `package.unsafe_allow_scripts = true` in talc.ccl.
+///
+/// Returns the (possibly modified) config and a list of human-readable
+/// warning strings describing what was stripped.
+///
+/// This blocks the credential-exposure path where a malicious release PR
+/// adds `scripts.prepublishOnly` / `scripts.prepare` via talc.ccl and has
+/// it run with `NODE_AUTH_TOKEN` available during `npm publish`.
+pub fn sanitize_extras(talc: TalcConfig) -> #(TalcConfig, List(String)) {
+  case talc.package.unsafe_allow_scripts {
+    True -> #(talc, [])
+    False -> {
+      let #(kept, dropped) =
+        list.partition(talc.extra_fields, fn(pair) { pair.0 != "scripts" })
+      case dropped {
+        [] -> #(talc, [])
+        _ -> {
+          let warning =
+            "Stripped 'scripts' from generated package.json (set package.unsafe_allow_scripts = \"true\" in talc.ccl to opt in)"
+          #(TalcConfig(..talc, extra_fields: kept), [warning])
+        }
+      }
+    }
+  }
+}
 
 /// Errors that can occur during package.json generation.
 pub type GenerationError {

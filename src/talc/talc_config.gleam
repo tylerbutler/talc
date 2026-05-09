@@ -22,6 +22,12 @@ pub type PackageConfig {
     scope: Option(String),
     registry: Option(String),
     output_dir: String,
+    /// When True, the user opts in to lifecycle script execution: `scripts`
+    /// from `[package.json]` are kept in the generated package.json, and
+    /// `npm pack`/`npm publish` are invoked WITHOUT `--ignore-scripts`.
+    /// Defaults to False — a malicious release PR cannot land arbitrary
+    /// `prepublishOnly`/`prepare` code paths via `talc.ccl`.
+    unsafe_allow_scripts: Bool,
   )
 }
 
@@ -40,7 +46,12 @@ pub type TalcConfig {
 /// Returns a TalcConfig with all default values.
 pub fn default() -> TalcConfig {
   TalcConfig(
-    package: PackageConfig(scope: None, registry: None, output_dir: "npm_dist"),
+    package: PackageConfig(
+      scope: None,
+      registry: None,
+      output_dir: "npm_dist",
+      unsafe_allow_scripts: False,
+    ),
     extra_fields: [],
     peer_dependencies: [],
     use_true_myth: True,
@@ -109,7 +120,19 @@ fn parse_package(ccl: CCL) -> PackageConfig {
     Error(_) -> "npm_dist"
   }
 
-  PackageConfig(scope: scope, registry: registry, output_dir: output_dir)
+  let unsafe_allow_scripts = case
+    access.get_string(ccl, ["package", "unsafe_allow_scripts"])
+  {
+    Ok("true") -> True
+    _ -> False
+  }
+
+  PackageConfig(
+    scope: scope,
+    registry: registry,
+    output_dir: output_dir,
+    unsafe_allow_scripts: unsafe_allow_scripts,
+  )
 }
 
 fn parse_extra_fields(ccl: CCL) -> List(#(String, json.Json)) {

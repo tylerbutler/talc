@@ -9,8 +9,34 @@ pub fn default_config_test() {
   config.package.scope |> expect.to_equal(None)
   config.package.registry |> expect.to_equal(None)
   config.package.output_dir |> expect.to_equal("npm_dist")
+  config.package.unsafe_allow_scripts |> expect.to_be_false()
   config.extra_fields |> expect.to_equal([])
   config.peer_dependencies |> expect.to_equal([])
+}
+
+pub fn parse_unsafe_allow_scripts_default_test() {
+  let config = talc_config.parse("") |> expect.to_be_ok()
+  config.package.unsafe_allow_scripts |> expect.to_be_false()
+}
+
+pub fn parse_unsafe_allow_scripts_true_test() {
+  let ccl =
+    "package =
+  unsafe_allow_scripts = true
+"
+
+  let config = talc_config.parse(ccl) |> expect.to_be_ok()
+  config.package.unsafe_allow_scripts |> expect.to_be_true()
+}
+
+pub fn parse_unsafe_allow_scripts_false_test() {
+  let ccl =
+    "package =
+  unsafe_allow_scripts = false
+"
+
+  let config = talc_config.parse(ccl) |> expect.to_be_ok()
+  config.package.unsafe_allow_scripts |> expect.to_be_false()
 }
 
 pub fn parse_empty_ccl_test() {
