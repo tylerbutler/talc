@@ -1,0 +1,3 @@
+kind: Security
+body: Block npm lifecycle script injection during `talc publish` / `talc pack`. Scripts are stripped from the generated `package.json` and npm is invoked with `--ignore-scripts` unless `package.unsafe_allow_scripts = true` is set in `talc.ccl`.
+time: 2026-05-08T19:36:35.108801603-07:00

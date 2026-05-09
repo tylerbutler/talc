@@ -53,9 +53,12 @@ pub fn publish_flag_error_to_string(error: PublishFlagError) -> String {
   }
 }
 
-/// Runs `npm pack` in the given directory.
-pub fn pack(working_dir: String) -> Result(String, NpmError) {
-  case run_npm("pack", [], working_dir) {
+/// Runs `npm pack` in the given directory with the given flags.
+pub fn pack(
+  working_dir: String,
+  flags: List(String),
+) -> Result(String, NpmError) {
+  case run_npm("pack", flags, working_dir) {
     Ok(#(0, output)) -> Ok(string.trim(output))
     Ok(#(code, output)) -> Error(NpmFailed("pack", code, output))
     Error(RunNotFound) -> Error(NpmNotFound)
