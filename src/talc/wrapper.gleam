@@ -6,11 +6,14 @@
 import gleam/dict.{type Dict}
 import gleam/int as gleam_int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/package_interface.{
   type Function, type Module, type Type, Fn, Named, Tuple, Variable,
 }
 import gleam/string
+import talc/native_types.{
+  type NativeFunctionSignature, type NativeImport, type NativeModuleTypes,
+}
 
 /// Result of generating wrapper files for a module.
 pub type WrapperResult {
@@ -21,6 +24,8 @@ pub type WrapperResult {
     dts: String,
     /// Whether any functions needed wrapping (if false, module can be skipped)
     has_wrapped_functions: Bool,
+    /// Warnings emitted while generating wrappers
+    warnings: List(String),
   )
 }
 
@@ -32,6 +37,28 @@ pub type WrapperResult {
 pub fn generate_module_wrapper(
   module: Module,
   module_name: String,
+) -> WrapperResult {
+  generate_module_wrapper_with_optional_native(module, module_name, None)
+}
+
+/// Generates wrapper .mjs and .d.ts files using native TypeScript declarations
+/// where available.
+pub fn generate_module_wrapper_with_native(
+  module: Module,
+  module_name: String,
+  native_types: NativeModuleTypes,
+) -> WrapperResult {
+  generate_module_wrapper_with_optional_native(
+    module,
+    module_name,
+    Some(native_types),
+  )
+}
+
+fn generate_module_wrapper_with_optional_native(
+  module: Module,
+  module_name: String,
+  native_types: Option(NativeModuleTypes),
 ) -> WrapperResult {
   let functions =
     dict.to_list(module.functions)
@@ -52,9 +79,14 @@ pub fn generate_module_wrapper(
   let has_wrapped = list.any(analyzed, fn(t) { t.2 })
 
   let mjs = generate_mjs(analyzed, module_name)
-  let dts = generate_dts(analyzed, module_name)
+  let #(dts, warnings) = generate_dts(analyzed, module_name, native_types)
 
-  WrapperResult(mjs: mjs, dts: dts, has_wrapped_functions: has_wrapped)
+  WrapperResult(
+    mjs: mjs,
+    dts: dts,
+    has_wrapped_functions: has_wrapped,
+    warnings: warnings,
+  )
 }
 
 /// Checks if a function needs wrapping (has top-level Result or Option).
@@ -89,17 +121,7 @@ fn generate_mjs(
 ) -> String {
   let wrapped = list.filter(functions, fn(t) { t.2 })
 
-  let needs_result =
-    list.any(wrapped, fn(t) {
-      is_result_type({ t.1 }.return)
-      || list.any({ t.1 }.parameters, fn(p) { is_result_type(p.type_) })
-    })
-
-  let needs_option =
-    list.any(wrapped, fn(t) {
-      is_option_type({ t.1 }.return)
-      || list.any({ t.1 }.parameters, fn(p) { is_option_type(p.type_) })
-    })
+  let #(needs_result, needs_option) = required_conversions(wrapped)
 
   let prefix = relative_prefix(module_name)
   let relative_module = prefix <> module_name <> ".mjs"
@@ -244,20 +266,11 @@ fn generate_wrapper_fn_mjs(name: String, func: Function) -> String {
 fn generate_dts(
   functions: List(#(String, Function, Bool)),
   module_name: String,
-) -> String {
+  native_types: Option(NativeModuleTypes),
+) -> #(String, List(String)) {
   let wrapped = list.filter(functions, fn(t) { t.2 })
 
-  let needs_result =
-    list.any(wrapped, fn(t) {
-      is_result_type({ t.1 }.return)
-      || list.any({ t.1 }.parameters, fn(p) { is_result_type(p.type_) })
-    })
-
-  let needs_option =
-    list.any(wrapped, fn(t) {
-      is_option_type({ t.1 }.return)
-      || list.any({ t.1 }.parameters, fn(p) { is_option_type(p.type_) })
-    })
+  let #(needs_result, needs_option) = required_conversions(wrapped)
 
   let prefix = relative_prefix(module_name)
   let relative_module = prefix <> module_name <> ".mjs"
@@ -295,6 +308,10 @@ fn generate_dts(
     True -> ["import type { Maybe } from \"true-myth/maybe\";", ..mut_imports]
     False -> mut_imports
   }
+  let mut_imports =
+    native_type_imports(native_types, module_name, needs_result, needs_option)
+    |> list.reverse
+    |> list.append(mut_imports)
 
   let import_block =
     list.reverse(mut_imports)
@@ -304,22 +321,172 @@ fn generate_dts(
   let reexport = "\nexport * from \"" <> relative_module <> "\";\n"
 
   // Wrapped function declarations
-  let wrapper_decls =
+  let generated_decls =
     list.map(wrapped, fn(t) {
       let #(name, func, _) = t
-      generate_wrapper_fn_dts(name, func)
+      generate_wrapper_fn_dts(name, func, native_types)
     })
+
+  let wrapper_decls =
+    generated_decls
+    |> list.map(fn(result) { result.0 })
     |> string.join("\n")
+
+  let warnings = list.flat_map(generated_decls, fn(result) { result.1 })
 
   let preamble = case import_block {
     "" -> ""
     block -> block <> "\n"
   }
 
-  preamble <> reexport <> "\n" <> wrapper_decls
+  #(preamble <> reexport <> "\n" <> wrapper_decls, warnings)
 }
 
-fn generate_wrapper_fn_dts(name: String, func: Function) -> String {
+fn native_type_imports(
+  native_types: Option(NativeModuleTypes),
+  module_name: String,
+  needs_result: Bool,
+  needs_option: Bool,
+) -> List(String) {
+  case native_types {
+    None -> []
+    Some(native_types) ->
+      native_types.imports
+      |> list.fold([], fn(imports, import_) {
+        case
+          rebase_native_import(import_, module_name, needs_result, needs_option)
+        {
+          Some(import_) -> [import_, ..imports]
+          None -> imports
+        }
+      })
+      |> list.reverse
+  }
+}
+
+fn rebase_native_import(
+  import_: NativeImport,
+  module_name: String,
+  needs_result: Bool,
+  needs_option: Bool,
+) -> Option(String) {
+  case
+    filter_conflicting_native_imports(import_.line, needs_result, needs_option)
+  {
+    None -> None
+    Some(line) -> {
+      let rebased_specifier =
+        rebase_native_import_specifier(module_name, import_.specifier)
+      line
+      |> string.replace(
+        each: "\"" <> import_.specifier <> "\"",
+        with: "\"" <> rebased_specifier <> "\"",
+      )
+      |> Some
+    }
+  }
+}
+
+fn filter_conflicting_native_imports(
+  line: String,
+  needs_result: Bool,
+  needs_option: Bool,
+) -> Option(String) {
+  case string.starts_with(line, "import type { ") {
+    False -> Some(line)
+    True -> {
+      case string.split_once(line, " } from \"") {
+        Error(_) -> Some(line)
+        Ok(#(before_from, after_from)) -> {
+          let specifiers =
+            before_from
+            |> string.drop_start(string.length("import type { "))
+            |> native_types.split_balanced(",")
+            |> list.filter(fn(specifier) {
+              let local_name = native_import_local_name(specifier)
+              !{
+                local_name == "Result"
+                && needs_result
+                || local_name == "Option"
+                && needs_option
+              }
+            })
+
+          case specifiers {
+            [] -> None
+            _ ->
+              Some(
+                "import type { "
+                <> string.join(specifiers, ", ")
+                <> " } from \""
+                <> after_from,
+              )
+          }
+        }
+      }
+    }
+  }
+}
+
+fn native_import_local_name(specifier: String) -> String {
+  let specifier = string.trim(specifier)
+  case string.split_once(specifier, " as ") {
+    Ok(#(_imported, local)) -> string.trim(local)
+    Error(_) -> specifier
+  }
+}
+
+fn rebase_native_import_specifier(
+  module_name: String,
+  specifier: String,
+) -> String {
+  let target = case specifier == "./gleam.d.mts" {
+    True -> "gleam.d.mts"
+    False ->
+      list.append(module_dir_parts(module_name), string.split(specifier, "/"))
+      |> normalize_path_parts
+      |> string.join("/")
+  }
+
+  relative_prefix(module_name) <> target
+}
+
+fn module_dir_parts(module_name: String) -> List(String) {
+  module_name
+  |> string.split("/")
+  |> list_init
+}
+
+fn list_init(items: List(String)) -> List(String) {
+  case items {
+    [] -> []
+    [_] -> []
+    [first, ..rest] -> [first, ..list_init(rest)]
+  }
+}
+
+fn normalize_path_parts(parts: List(String)) -> List(String) {
+  parts
+  |> list.fold([], fn(stack, part) {
+    case part {
+      "" -> stack
+      "." -> stack
+      ".." ->
+        case stack {
+          [] -> []
+          [_top, ..rest] -> rest
+        }
+      _ -> [part, ..stack]
+    }
+  })
+  |> list.reverse
+}
+
+fn generate_wrapper_fn_dts(
+  name: String,
+  func: Function,
+  native_types: Option(NativeModuleTypes),
+) -> #(String, List(String)) {
   let safe_name = escape_js_reserved(name)
 
   // Collect type variables from the function
@@ -337,25 +504,174 @@ fn generate_wrapper_fn_dts(name: String, func: Function) -> String {
     }
   }
 
-  let params =
-    list.index_map(func.parameters, fn(p, i) {
-      let param_name = case p.label {
-        Some(label) -> escape_js_reserved(label)
-        None -> "p" <> gleam_int.to_string(i)
+  let #(params, return_ts, warnings) = case native_types {
+    None -> #(
+      fallback_params(func, var_map),
+      type_to_ts(func.return, var_map),
+      [],
+    )
+    Some(native_types) -> {
+      case dict.get(native_types.functions, name) {
+        Ok(signature) ->
+          case native_signature_to_ts(func, signature) {
+            Ok(native_ts) -> #(native_ts.0, native_ts.1, [])
+            Error(_) -> #(
+              fallback_params(func, var_map),
+              type_to_ts(func.return, var_map),
+              [malformed_native_warning(name)],
+            )
+          }
+        Error(_) -> #(
+          fallback_params(func, var_map),
+          type_to_ts(func.return, var_map),
+          [missing_native_warning(name)],
+        )
       }
-      param_name <> ": " <> type_to_ts(p.type_, var_map)
-    })
+    }
+  }
 
-  let return_ts = type_to_ts(func.return, var_map)
+  #(
+    "export declare function "
+      <> safe_name
+      <> generics
+      <> "("
+      <> string.join(params, ", ")
+      <> "): "
+      <> return_ts
+      <> ";\n",
+    warnings,
+  )
+}
 
-  "export declare function "
-  <> safe_name
-  <> generics
-  <> "("
-  <> string.join(params, ", ")
-  <> "): "
-  <> return_ts
-  <> ";\n"
+fn required_conversions(
+  functions: List(#(String, Function, Bool)),
+) -> #(Bool, Bool) {
+  #(
+    list.any(functions, fn(t) {
+      is_result_type({ t.1 }.return)
+      || list.any({ t.1 }.parameters, fn(p) { is_result_type(p.type_) })
+    }),
+    list.any(functions, fn(t) {
+      is_option_type({ t.1 }.return)
+      || list.any({ t.1 }.parameters, fn(p) { is_option_type(p.type_) })
+    }),
+  )
+}
+
+fn fallback_params(func: Function, var_map: Dict(Int, String)) -> List(String) {
+  list.index_map(func.parameters, fn(p, i) {
+    let param_name = case p.label {
+      Some(label) -> escape_js_reserved(label)
+      None -> "p" <> gleam_int.to_string(i)
+    }
+    param_name <> ": " <> type_to_ts(p.type_, var_map)
+  })
+}
+
+fn native_signature_to_ts(
+  func: Function,
+  signature: NativeFunctionSignature,
+) -> Result(#(List(String), String), Nil) {
+  case list.length(func.parameters) == list.length(signature.parameters) {
+    False -> Error(Nil)
+    True -> {
+      let indexed_params =
+        list.zip(func.parameters, signature.parameters)
+        |> list.index_map(fn(pair, i) { #(i, pair) })
+
+      case
+        list.try_fold(indexed_params, [], fn(params, indexed_pair) {
+          let #(i, pair) = indexed_pair
+          let #(param, native_param) = pair
+          let #(_, native_type) = native_param
+          let param_name = case param.label {
+            Some(label) -> escape_js_reserved(label)
+            None -> "p" <> gleam_int.to_string(i)
+          }
+          case rewrite_native_type_result(param.type_, native_type) {
+            Ok(param_type) -> Ok([param_name <> ": " <> param_type, ..params])
+            Error(_) -> Error(Nil)
+          }
+        })
+      {
+        Ok(params) ->
+          case rewrite_native_type_result(func.return, signature.return_type) {
+            Ok(return_ts) -> Ok(#(list.reverse(params), return_ts))
+            Error(_) -> Error(Nil)
+          }
+        Error(_) -> Error(Nil)
+      }
+    }
+  }
+}
+
+fn rewrite_native_type_result(gleam_type: Type, native_type: String) {
+  case is_result_type(gleam_type) {
+    True -> rewrite_top_level_result(native_type)
+    False ->
+      case is_option_type(gleam_type) {
+        True -> rewrite_top_level_option(native_type)
+        False -> Ok(native_type)
+      }
+  }
+}
+
+fn rewrite_top_level_result(native_type: String) -> Result(String, Nil) {
+  case top_level_type_arguments(native_type, "_.Result<", "Result<") {
+    Ok([ok_type, error_type]) ->
+      Ok("Result<" <> ok_type <> ", " <> error_type <> ">")
+    _ -> Error(Nil)
+  }
+}
+
+fn rewrite_top_level_option(native_type: String) -> Result(String, Nil) {
+  case top_level_type_arguments(native_type, "_.Option<", "Option<") {
+    Ok([inner_type]) -> Ok("Maybe<" <> inner_type <> ">")
+    _ -> Error(Nil)
+  }
+}
+
+fn top_level_type_arguments(
+  native_type: String,
+  namespaced_prefix: String,
+  bare_prefix: String,
+) -> Result(List(String), Nil) {
+  let native_type = string.trim(native_type)
+  case string.ends_with(native_type, ">") {
+    False -> Error(Nil)
+    True -> {
+      case string.starts_with(native_type, namespaced_prefix) {
+        True ->
+          native_type
+          |> string.drop_start(string.length(namespaced_prefix))
+          |> string.drop_end(1)
+          |> native_types.split_balanced(",")
+          |> Ok
+        False ->
+          case string.starts_with(native_type, bare_prefix) {
+            True ->
+              native_type
+              |> string.drop_start(string.length(bare_prefix))
+              |> string.drop_end(1)
+              |> native_types.split_balanced(",")
+              |> Ok
+            False -> Error(Nil)
+          }
+      }
+    }
+  }
+}
+
+fn missing_native_warning(name: String) -> String {
+  "Missing native TypeScript signature for wrapped function "
+  <> name
+  <> "; falling back to generated types"
+}
+
+fn malformed_native_warning(name: String) -> String {
+  "Malformed native TypeScript signature for wrapped function "
+  <> name
+  <> "; falling back to generated types"
 }
 
 /// Maps a Gleam type to its true-myth-aware TypeScript representation.

@@ -3,6 +3,7 @@
 // that plain functions, true-myth-wrapped Results, and submodule exports work.
 
 import { strict as assert } from "node:assert";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,5 +38,21 @@ const mathModule = await import(
   path.join(distDir, "basic_gleam_package/math.mjs")
 );
 assert.strictEqual(mathModule.add(2, 3), 5, "add(2, 3) === 5");
+
+// 4. Wrapper declarations preserve external TypeScript aliases
+const wrapperDeclaration = await readFile(
+  path.join(distDir, "_wrapper/basic_gleam_package.d.ts"),
+  "utf8",
+);
+assert.match(
+  wrapperDeclaration,
+  /import type \{ Thing as Thing\$ \} from "\.\.\/thing\.d\.mts";/,
+  "wrapper declaration imports external Thing type with rebased path",
+);
+assert.match(
+  wrapperDeclaration,
+  /Result<Thing\$<number>, string>/,
+  "wrapper declaration preserves external Thing alias inside Result",
+);
 
 console.log("✓ All integration checks passed");

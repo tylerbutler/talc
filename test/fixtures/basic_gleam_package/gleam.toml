@@ -1,7 +1,7 @@
 name = "basic_gleam_package"
 version = "1.0.0"
 description = "Integration test fixture for talc"
-gleam = ">= 1.7.0"
+gleam = ">= 1.14.0"
 
 [javascript]
 typescript_declarations = true

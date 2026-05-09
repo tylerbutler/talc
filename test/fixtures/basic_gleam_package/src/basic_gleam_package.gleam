@@ -1,5 +1,8 @@
 import gleam/int
 
+@external(javascript, "./thing.d.mts", "Thing")
+pub type Thing(a)
+
 /// Returns a greeting string.
 pub fn greet(name: String) -> String {
   "Hello, " <> name <> "!"
@@ -13,4 +16,9 @@ pub fn parse_positive(s: String) -> Result(Int, String) {
     Ok(_) -> Error("not positive")
     Error(_) -> Error("not a number")
   }
+}
+
+/// Returns the provided external Thing value in an Ok result.
+pub fn keep_thing(thing: Thing(Int)) -> Result(Thing(Int), String) {
+  Ok(thing)
 }

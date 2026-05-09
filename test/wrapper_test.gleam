@@ -6,6 +6,9 @@ import gleam/package_interface.{
 }
 import gleam/string
 import startest/expect
+import talc/native_types.{
+  NativeFunctionSignature, NativeImport, NativeModuleTypes,
+}
 import talc/wrapper
 
 fn js_impl() -> Implementations {
@@ -47,6 +50,12 @@ fn int_type() {
 
 fn string_type() {
   Named(name: "String", package: "", module: "gleam", parameters: [])
+}
+
+fn thing_type() {
+  Named(name: "Thing", package: "other_pkg", module: "other/pkg", parameters: [
+    int_type(),
+  ])
 }
 
 fn nil_type() {
@@ -401,6 +410,357 @@ pub fn wrapped_fn_overrides_star_export_test() {
   |> expect.to_be_true()
   result.dts
   |> string_contains("export declare function safe_divide")
+  |> expect.to_be_true()
+}
+
+pub fn native_result_return_preserves_external_type_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "load_thing",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [],
+            return: result_type(thing_type(), string_type()),
+          ),
+        ),
+      ]),
+    )
+  let native_types =
+    NativeModuleTypes(
+      imports: [],
+      functions: dict.from_list([
+        #(
+          "load_thing",
+          NativeFunctionSignature(
+            parameters: [],
+            return_type: "_.Result<Thing$<number>, string>",
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper_with_native(module, "my_lib", native_types)
+
+  result.warnings |> expect.to_equal([])
+  result.dts
+  |> string_contains("Result<Thing$<number>, string>")
+  |> expect.to_be_true()
+  result.dts |> string_contains("Thing<number>") |> expect.to_be_false()
+}
+
+pub fn native_result_return_imports_root_external_type_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "load_thing",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [],
+            return: result_type(thing_type(), string_type()),
+          ),
+        ),
+      ]),
+    )
+  let native_types =
+    NativeModuleTypes(
+      imports: [
+        NativeImport(
+          line: "import type { Thing as Thing$ } from \"./thing.d.mts\";",
+          specifier: "./thing.d.mts",
+        ),
+      ],
+      functions: dict.from_list([
+        #(
+          "load_thing",
+          NativeFunctionSignature(
+            parameters: [],
+            return_type: "_.Result<Thing$<number>, string>",
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper_with_native(module, "my_lib", native_types)
+
+  result.dts
+  |> string_contains("import type { Thing as Thing$ } from \"../thing.d.mts\";")
+  |> expect.to_be_true()
+}
+
+pub fn native_result_return_imports_nested_external_type_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "load_thing",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [],
+            return: result_type(thing_type(), string_type()),
+          ),
+        ),
+      ]),
+    )
+  let native_types =
+    NativeModuleTypes(
+      imports: [
+        NativeImport(
+          line: "import type { Thing as Thing$ } from \"../thing.d.mts\";",
+          specifier: "../thing.d.mts",
+        ),
+      ],
+      functions: dict.from_list([
+        #(
+          "load_thing",
+          NativeFunctionSignature(
+            parameters: [],
+            return_type: "_.Result<Thing$<number>, string>",
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper_with_native(
+      module,
+      "my_lib/nested",
+      native_types,
+    )
+
+  result.dts
+  |> string_contains(
+    "import type { Thing as Thing$ } from \"../../thing.d.mts\";",
+  )
+  |> expect.to_be_true()
+}
+
+pub fn native_nested_prelude_type_import_is_rebased_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "load_nested",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [],
+            return: result_type(thing_type(), string_type()),
+          ),
+        ),
+      ]),
+    )
+  let native_types =
+    NativeModuleTypes(
+      imports: [
+        NativeImport(
+          line: "import type * as _ from \"./gleam.d.mts\";",
+          specifier: "./gleam.d.mts",
+        ),
+      ],
+      functions: dict.from_list([
+        #(
+          "load_nested",
+          NativeFunctionSignature(
+            parameters: [],
+            return_type: "_.Result<ReadonlyArray<_.Result<number, string>>, string>",
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper_with_native(module, "my_lib", native_types)
+
+  result.dts
+  |> string_contains("import type * as _ from \"../gleam.d.mts\";")
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains("Result<ReadonlyArray<_.Result<number, string>>, string>")
+  |> expect.to_be_true()
+}
+
+pub fn native_nested_module_prelude_import_is_rebased_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "load_nested",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [],
+            return: result_type(thing_type(), string_type()),
+          ),
+        ),
+      ]),
+    )
+  let native_types =
+    NativeModuleTypes(
+      imports: [
+        NativeImport(
+          line: "import type * as _ from \"./gleam.d.mts\";",
+          specifier: "./gleam.d.mts",
+        ),
+      ],
+      functions: dict.from_list([
+        #(
+          "load_nested",
+          NativeFunctionSignature(
+            parameters: [],
+            return_type: "_.Result<ReadonlyArray<_.Result<number, string>>, string>",
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper_with_native(
+      module,
+      "my_lib/nested",
+      native_types,
+    )
+
+  result.dts
+  |> string_contains("import type * as _ from \"../../gleam.d.mts\";")
+  |> expect.to_be_true()
+}
+
+pub fn native_type_alias_result_does_not_conflict_with_true_myth_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "load_thing",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [],
+            return: result_type(thing_type(), string_type()),
+          ),
+        ),
+      ]),
+    )
+  let native_types =
+    NativeModuleTypes(
+      imports: [
+        NativeImport(
+          line: "import type { Result, Option } from \"./thing.d.mts\";",
+          specifier: "./thing.d.mts",
+        ),
+      ],
+      functions: dict.from_list([
+        #(
+          "load_thing",
+          NativeFunctionSignature(
+            parameters: [],
+            return_type: "_.Result<number, string>",
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper_with_native(module, "my_lib", native_types)
+
+  result.dts
+  |> string_contains("import type { Result } from \"true-myth/result\";")
+  |> expect.to_be_true()
+  result.dts
+  |> string_contains("import type { Result, Option } from \"../thing.d.mts\";")
+  |> expect.to_be_false()
+}
+
+pub fn native_option_parameter_preserves_external_type_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "save_thing",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [
+              Parameter(label: Some("thing"), type_: option_type(thing_type())),
+            ],
+            return: nil_type(),
+          ),
+        ),
+      ]),
+    )
+  let native_types =
+    NativeModuleTypes(
+      imports: [],
+      functions: dict.from_list([
+        #(
+          "save_thing",
+          NativeFunctionSignature(
+            parameters: [#("thing", "_.Option<Thing$<number>>")],
+            return_type: "undefined",
+          ),
+        ),
+      ]),
+    )
+
+  let result =
+    wrapper.generate_module_wrapper_with_native(module, "my_lib", native_types)
+
+  result.warnings |> expect.to_equal([])
+  result.dts
+  |> string_contains("thing: Maybe<Thing$<number>>")
+  |> expect.to_be_true()
+  result.dts |> string_contains("Thing<number>") |> expect.to_be_false()
+}
+
+pub fn missing_native_signature_warns_and_falls_back_test() {
+  let module =
+    Module(
+      ..empty_module(),
+      functions: dict.from_list([
+        #(
+          "load_thing",
+          Function(
+            documentation: None,
+            deprecation: None,
+            implementations: js_impl(),
+            parameters: [],
+            return: result_type(thing_type(), string_type()),
+          ),
+        ),
+      ]),
+    )
+  let native_types = NativeModuleTypes(imports: [], functions: dict.new())
+
+  let result =
+    wrapper.generate_module_wrapper_with_native(module, "my_lib", native_types)
+
+  result.warnings
+  |> expect.to_equal([
+    "Missing native TypeScript signature for wrapped function load_thing; falling back to generated types",
+  ])
+  result.dts
+  |> string_contains("Result<Thing<number>, string>")
   |> expect.to_be_true()
 }
 

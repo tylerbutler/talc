@@ -67,7 +67,7 @@ test-integration:
     (cd "$FIXTURE/npm_dist" && npm pack --dry-run --quiet)
 
     echo "→ Cleaning fixture build artifacts..."
-    rm -rf "$FIXTURE/build"
+    rm -rf "$FIXTURE/build" "$FIXTURE/npm_dist"
 
     echo "✓ Integration tests passed"
 

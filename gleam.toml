@@ -3,16 +3,18 @@ version = "0.1.0"
 description = "npm packaging tool for Gleam libraries"
 licences = ["MIT"]
 repository = { type = "github", user = "tylerbutler", repo = "talc" }
-gleam = ">= 1.7.0"
+gleam = ">= 1.14.0"
 
 internal_modules = [
   "talc/gleam_toml",
   "talc/interface",
+  "talc/native_types",
   "talc/npm",
   "talc/output",
   "talc/package_json",
   "talc/talc_config",
   "talc/wrapper",
+  "talc/wrapper_metadata",
 ]
 
 [dependencies]

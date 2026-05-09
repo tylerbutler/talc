@@ -18,7 +18,7 @@ import talc/npm
 import talc/output
 import talc/package_json
 import talc/talc_config
-import talc/wrapper
+import talc/wrapper_metadata
 
 pub fn main() {
   glint.new()
@@ -210,7 +210,13 @@ fn run_generate(
       |> list.fold(#([], set.new(), []), fn(acc, pair) {
         let #(files, wrapped, warnings) = acc
         let #(module_name, module) = pair
-        let result = wrapper.generate_module_wrapper(module, module_name)
+        let #(result, module_warnings) =
+          wrapper_metadata.generate_module_wrapper_with_metadata(
+            gleam_config.name,
+            module_name,
+            module,
+          )
+        let warnings = list.append(warnings, module_warnings)
         case result.has_wrapped_functions {
           True -> {
             let wrapper_mjs_path = "_wrapper/" <> module_name <> ".mjs"
