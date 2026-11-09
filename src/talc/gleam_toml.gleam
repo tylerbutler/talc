@@ -30,6 +30,7 @@ pub type ConfigError {
   FileError(message: String)
   ParseError(message: String)
   MissingField(field: String)
+  InvalidField(field: String, expected: String)
 }
 
 /// Reads and parses `gleam.toml` from the given directory.
@@ -64,7 +65,7 @@ pub fn parse(content: String) -> Result(GleamConfig, ConfigError) {
     tom.get_string(toml, ["description"])
     |> result.unwrap("")
 
-  let licences = get_licences(toml)
+  use licences <- result.try(get_licences(toml))
   let repository = get_repository(toml)
 
   Ok(GleamConfig(
@@ -84,16 +85,19 @@ fn get_required_string(
   |> result.map_error(fn(_) { MissingField(field) })
 }
 
-fn get_licences(toml: dict.Dict(String, tom.Toml)) -> List(String) {
-  case tom.get_array(toml, ["licences"]) {
-    Ok(items) ->
-      list.filter_map(items, fn(item) {
+fn get_licences(
+  toml: dict.Dict(String, tom.Toml),
+) -> Result(List(String), ConfigError) {
+  case dict.get(toml, "licences") {
+    Error(_) -> Ok([])
+    Ok(tom.Array(items)) ->
+      list.try_map(items, fn(item) {
         case item {
           tom.String(s) -> Ok(s)
-          _ -> Error(Nil)
+          _ -> Error(InvalidField("licences", "an array of strings"))
         }
       })
-    Error(_) -> []
+    Ok(_) -> Error(InvalidField("licences", "an array of strings"))
   }
 }
 

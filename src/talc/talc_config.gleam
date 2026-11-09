@@ -3,7 +3,6 @@
 /// This module reads the optional `talc.ccl` sidecar file that allows
 /// authors to override or extend generated package.json fields.
 /// Uses the CCL (Categorical Configuration Language) format.
-import ccl/access
 import ccl/hierarchy
 import ccl/parser
 import ccl/types.{type CCL, type CCLValue, CclList, CclObject, CclString}
@@ -66,15 +65,21 @@ pub fn default() -> TalcConfig {
 /// ```
 pub fn read(from directory: String) -> Result(TalcConfig, String) {
   let path = directory <> "/talc.ccl"
-  case simplifile.is_file(path) {
-    Ok(True) -> {
+  case simplifile.link_info(path) {
+    Ok(_) -> {
       use content <- result.try(
         simplifile.read(path)
-        |> result.map_error(fn(_) { "Could not read " <> path }),
+        |> result.map_error(fn(error) {
+          "Could not read " <> path <> ": " <> simplifile.describe_error(error)
+        }),
       )
       parse(content)
     }
-    _ -> Ok(default())
+    Error(simplifile.Enoent) -> Ok(default())
+    Error(error) ->
+      Error(
+        "Could not inspect " <> path <> ": " <> simplifile.describe_error(error),
+      )
   }
 }
 
@@ -99,9 +104,9 @@ pub fn parse(content: String) -> Result(TalcConfig, String) {
     _ -> Ok(Nil)
   })
 
-  let package = parse_package(ccl)
-  let extra_fields = parse_extra_fields(ccl)
-  let peer_dependencies = parse_peer_dependencies(ccl)
+  use package <- result.try(parse_package(ccl))
+  use extra_fields <- result.try(parse_extra_fields(ccl))
+  use peer_dependencies <- result.try(parse_peer_dependencies(ccl))
 
   Ok(TalcConfig(
     package: package,
@@ -110,44 +115,49 @@ pub fn parse(content: String) -> Result(TalcConfig, String) {
   ))
 }
 
-fn parse_package(ccl: CCL) -> PackageConfig {
-  let scope = case access.get_string(ccl, ["package", "scope"]) {
-    Ok(s) -> Some(s)
-    Error(_) -> None
+fn section(ccl: CCL, key: String) -> Result(CCL, String) {
+  case dict.get(ccl, key) {
+    Error(_) -> Ok(dict.new())
+    Ok(CclObject(fields)) -> Ok(fields)
+    Ok(_) -> Error("talc.ccl " <> key <> " must be a section")
   }
-
-  let registry = case access.get_string(ccl, ["package", "registry"]) {
-    Ok(s) -> Some(s)
-    Error(_) -> None
-  }
-
-  let output_dir = case access.get_string(ccl, ["package", "output_dir"]) {
-    Ok(s) -> s
-    Error(_) -> "npm_dist"
-  }
-
-  let unsafe_allow_scripts = case
-    access.get_string(ccl, ["package", "unsafe_allow_scripts"])
-  {
-    Ok("true") -> True
-    _ -> False
-  }
-
-  PackageConfig(
-    scope: scope,
-    registry: registry,
-    output_dir: output_dir,
-    unsafe_allow_scripts: unsafe_allow_scripts,
-  )
 }
 
-fn parse_extra_fields(ccl: CCL) -> List(#(String, json.Json)) {
-  case dict.get(ccl, "package.json") {
-    Ok(CclObject(table)) ->
-      dict.to_list(table)
-      |> list.map(fn(pair) { #(pair.0, ccl_value_to_json(pair.1)) })
-    _ -> []
+fn optional_string(fields: CCL, key: String) -> Result(Option(String), String) {
+  case dict.get(fields, key) {
+    Error(_) -> Ok(None)
+    Ok(CclString(value)) -> Ok(Some(value))
+    Ok(_) -> Error("talc.ccl package." <> key <> " must be a string")
   }
+}
+
+fn parse_package(ccl: CCL) -> Result(PackageConfig, String) {
+  use fields <- result.try(section(ccl, "package"))
+  use scope <- result.try(optional_string(fields, "scope"))
+  use registry <- result.try(optional_string(fields, "registry"))
+  use output_dir <- result.try(optional_string(fields, "output_dir"))
+  use scripts <- result.try(optional_string(fields, "unsafe_allow_scripts"))
+  use unsafe_allow_scripts <- result.try(case scripts {
+    None | Some("false") -> Ok(False)
+    Some("true") -> Ok(True)
+    Some(_) ->
+      Error("talc.ccl package.unsafe_allow_scripts must be true or false")
+  })
+
+  Ok(PackageConfig(
+    scope: scope,
+    registry: registry,
+    output_dir: option.unwrap(output_dir, "npm_dist"),
+    unsafe_allow_scripts: unsafe_allow_scripts,
+  ))
+}
+
+fn parse_extra_fields(ccl: CCL) -> Result(List(#(String, json.Json)), String) {
+  use table <- result.try(section(ccl, "package.json"))
+  Ok(
+    dict.to_list(table)
+    |> list.map(fn(pair) { #(pair.0, ccl_value_to_json(pair.1)) }),
+  )
 }
 
 /// Converts a CCL value to a JSON value with smart type coercion.
@@ -188,16 +198,16 @@ fn coerce_string_to_json(s: String) -> json.Json {
   }
 }
 
-fn parse_peer_dependencies(ccl: CCL) -> List(#(String, String)) {
-  case dict.get(ccl, "peer_dependencies") {
-    Ok(CclObject(table)) ->
-      dict.to_list(table)
-      |> list.filter_map(fn(pair) {
-        case pair {
-          #(key, CclString(value)) -> Ok(#(key, value))
-          _ -> Error(Nil)
-        }
-      })
-    _ -> []
-  }
+fn parse_peer_dependencies(
+  ccl: CCL,
+) -> Result(List(#(String, String)), String) {
+  use table <- result.try(section(ccl, "peer_dependencies"))
+  dict.to_list(table)
+  |> list.try_map(fn(pair) {
+    case pair {
+      #(key, CclString(value)) -> Ok(#(key, value))
+      #(key, _) ->
+        Error("talc.ccl peer_dependencies." <> key <> " must be a string")
+    }
+  })
 }

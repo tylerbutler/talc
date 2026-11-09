@@ -1,6 +1,8 @@
 import gleam/json
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import simplifile
 import startest/expect
 import talc/talc_config
 
@@ -217,4 +219,55 @@ pub fn parse_use_true_myth_false_test() {
   talc_config.parse(ccl)
   |> expect.to_be_error()
   |> expect_string_contains("Remove it from talc.ccl")
+}
+
+pub fn parse_rejects_malformed_present_package_values_test() {
+  list.each(
+    ["scope", "registry", "output_dir", "unsafe_allow_scripts"],
+    fn(key) {
+      talc_config.parse("package =\n  " <> key <> " =\n    nested = invalid\n")
+      |> expect.to_be_error()
+      |> expect.string_to_contain("package." <> key)
+    },
+  )
+  talc_config.parse("package =\n  unsafe_allow_scripts = yes\n")
+  |> expect.to_be_error()
+  |> expect.string_to_contain("must be true or false")
+}
+
+pub fn parse_rejects_malformed_present_sections_test() {
+  list.each(["package", "package.json", "peer_dependencies"], fn(key) {
+    talc_config.parse(key <> " = invalid\n")
+    |> expect.to_be_error()
+    |> expect.string_to_contain(key <> " must be a section")
+  })
+}
+
+pub fn parse_rejects_malformed_peer_dependency_test() {
+  talc_config.parse("peer_dependencies =\n  react =\n    nested = invalid\n")
+  |> expect.to_be_error()
+  |> expect.string_to_contain("peer_dependencies.react must be a string")
+}
+
+pub fn read_missing_optional_config_and_present_directory_test() {
+  let root = "test_work/talc_config_read"
+  simplifile.create_directory_all(root) |> expect.to_be_ok()
+  talc_config.read(root) |> expect.to_equal(Ok(talc_config.default()))
+  simplifile.create_directory(root <> "/talc.ccl") |> expect.to_be_ok()
+  talc_config.read(root)
+  |> expect.to_be_error()
+  |> expect.string_to_contain("Could not read")
+  simplifile.delete(root) |> expect.to_be_ok()
+}
+
+pub fn read_dangling_optional_config_reports_error_test() {
+  let root = "test_work/talc_config_dangling"
+  simplifile.create_directory_all(root) |> expect.to_be_ok()
+  simplifile.create_symlink("missing.ccl", root <> "/talc.ccl")
+  |> expect.to_be_ok()
+  talc_config.read(root)
+  |> expect.to_be_error()
+  |> expect.string_to_contain("Could not read")
+  simplifile.delete_file(root <> "/talc.ccl") |> expect.to_be_ok()
+  simplifile.delete(root) |> expect.to_be_ok()
 }

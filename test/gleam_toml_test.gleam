@@ -1,3 +1,4 @@
+import gleam/list
 import startest/expect
 import talc/gleam_toml
 
@@ -81,4 +82,22 @@ type = \"github\"
   let config = gleam_toml.parse(toml) |> expect.to_be_ok()
   let _ = config.repository |> expect.to_be_error()
   Nil
+}
+
+pub fn parse_rejects_malformed_present_licences_test() {
+  list.each(["\"MIT\"", "42", "[\"MIT\", 42]", "{ name = \"MIT\" }"], fn(value) {
+    gleam_toml.parse(
+      "name = \"test\"\nversion = \"1.0.0\"\nlicences = " <> value,
+    )
+    |> expect.to_equal(
+      Error(gleam_toml.InvalidField("licences", "an array of strings")),
+    )
+  })
+}
+
+pub fn parse_accepts_empty_licences_test() {
+  let config =
+    gleam_toml.parse("name = \"test\"\nversion = \"1.0.0\"\nlicences = []")
+    |> expect.to_be_ok()
+  config.licences |> expect.to_equal([])
 }
