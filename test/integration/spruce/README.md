@@ -10,6 +10,10 @@ It needs Gleam 1.16 or later, Erlang/OTP, Node.js, npm, git, tar, and network
 access to GitHub, Hex, and the npm registry. It is not part of `just ci` or
 default CI. It runs `pack`, never `publish`. npm lifecycle scripts are disabled.
 
+The complete target requires the packaging fixes in [#31](https://github.com/tylerbutler/talc/pull/31).
+This proof branch does not include those commits. Use the separate-checkout
+instructions below until those fixes reach main.
+
 ## What the proof checks
 
 The runner fetches Spruce revision
@@ -139,3 +143,51 @@ Recorded tools: Gleam `1.19.2`, Node.js `24.21.0`, npm `11.19.0`,
 Erlang/OTP `27` with ERTS `15.2.7.8`, git `2.56.0`, just `1.59.0`;
 host Darwin `27.2.0`, arm64. These are the tools actually used, not a claim
 that every configured or supported version was tested.
+
+### Packaging revision: complete acceptance
+
+The unchanged proof at `74cbb03f7366a19223a70813bb2810199d5f5704` passes
+against Talc `7d50df798d405b1de2bff887b157a4f94f9377e7` from
+[#31](https://github.com/tylerbutler/talc/pull/31), using the pinned Spruce
+revision and the tools listed above. I fetched that exact Talc commit into
+a disposable checkout, with no working changes, and ran:
+
+```sh
+git -C "$scratch" init --quiet
+git -C "$scratch" fetch --quiet --depth=1 https://github.com/tylerbutler/talc.git \
+  7d50df798d405b1de2bff887b157a4f94f9377e7
+git -C "$scratch" checkout --quiet --detach FETCH_HEAD
+TALC_SPRUCE_TALC_DIR="$scratch" just test-integration-spruce
+```
+
+`scratch` was a new, empty, harness-owned directory. The command exited zero
+with these stage results:
+
+| Check | Result |
+| --- | --- |
+| Multiple licences require an explicit metadata override | Pass |
+| Unchanged rebuild/repack, unpacked names and bytes | Pass |
+| Obsolete module/dependency rejection and fresh-output recovery | Pass |
+| Installed compiler artifacts | Pass: 410 SHA256 matches |
+| Named licence texts | Pass: MIT and Apache-2.0 source bytes match |
+| Public export metadata | Pass |
+| Installed native rendering, collections, transitive paths, hidden exports | Pass |
+| Strict NodeNext positive/negative types | Pass |
+| Controlled non-TTY terminal detection | Pass: unforced, NO_COLOR, FORCE_COLOR |
+
+For stale output, Talc rejected the second generation before changing any
+output file, including the user note and existing tarball. Selecting
+`npm_fresh` then produced a tarball without the removed private module or
+dependency. An unchanged Spruce build needed no cleanup to repack; the runner
+moved the prior tarball out of the output directory first.
+
+The runner deleted the Spruce source, build, and output directories before
+installing and exercising the consumer. It made no generated-file edits or
+upstream Spruce changes, and published nothing to npm. I removed the disposable
+Talc checkout after the run. The proof branch remains standalone against main;
+it has no merge, stack, or cherry-pick of the packaging commits.
+
+These results establish #23's acceptance proof for the recorded packaging
+revision. Baseline main still has the failures listed above until #31 lands.
+No upstream Spruce blocker appeared. Interactive terminals and other runtime
+or tool versions remain outside this recorded run.
