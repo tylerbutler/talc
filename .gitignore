@@ -33,3 +33,7 @@ test/fixtures/basic_gleam_package/manifest.toml
 
 # Talc temporary package interface files
 .talc_pkg_iface_*.json
+
+
+# APM dependencies
+apm_modules/

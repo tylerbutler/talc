@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "apm": {
+      "source": {
+        "source": "directory",
+        "path": "apm_modules"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "agent-skills@apm": true
+  }
+}
