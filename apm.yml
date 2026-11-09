@@ -1,6 +1,6 @@
-name: tylerbutler-shiny-carnival
+name: talc
 version: 1.0.0
-description: APM project for tylerbutler-shiny-carnival
+description: APM project for talc
 author: Tyler Butler
 # Which agent platforms to deploy to.
 # Resolution order: --target flag > this field > auto-detect from filesystem.
