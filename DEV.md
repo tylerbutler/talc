@@ -167,6 +167,14 @@ The integration test builds a fixture, installs its npm tarball into a
 separate consumer directory, and checks native runtime values, public exports,
 private-module FFI, and strict TypeScript declaration resolution.
 
+### Real-library acceptance
+
+Run `just test-integration-spruce` for the opt-in, pinned Spruce acceptance
+proof. It requires git, Node.js, npm, and network access. It does not publish
+to npm or run in default CI. See
+[the Spruce proof guide](test/integration/spruce/README.md) for isolation,
+prerequisites, exact commands, and recorded results.
+
 ### Writing Tests
 
 Tests use the `startest` framework:
