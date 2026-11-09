@@ -224,3 +224,115 @@ pub fn write_rejects_legacy_wrappers_without_overwriting_test() {
   result |> expect.to_equal(Error(output.ExistingWrappers(legacy_dir)))
   original |> expect.to_equal(Ok("original"))
 }
+
+pub fn validate_output_dir_rejects_portable_unsafe_forms_test() {
+  list.each(
+    [
+      ".", "./", "././", "//host/share", "\\\\host\\share", "\\rooted",
+      "C:\\out", "C:/out", "C:out", "..\\outside", "foo\\..\\bar", "foo/..\\bar",
+      "foo/../bar", "foo/.", "foo/ ", "foo./out", "out\u{0}side",
+    ],
+    fn(path) {
+      // A trailing "." is valid for nested paths, but not a root alias.
+      case path {
+        "foo/." -> validate_output_dir(path) |> expect.to_equal(Ok(Nil))
+        _ ->
+          validate_output_dir(path)
+          |> expect.to_equal(Error(UnsafeOutputDir(path)))
+      }
+    },
+  )
+}
+
+pub fn write_rejects_symlinked_destinations_without_mutation_test() {
+  let root = "test_work/talc_output_symlinks"
+  let assert Ok(cwd) = simplifile.current_directory()
+  let target = cwd <> "/" <> root <> "/target"
+  simplifile.create_directory_all(root <> "/target") |> expect.to_be_ok()
+  simplifile.write(to: target <> "/sentinel", contents: "unchanged")
+  |> expect.to_be_ok()
+  list.each(["root", "ancestor", "nested", "metadata", "dangling"], fn(name) {
+    let out = root <> "/" <> name
+    let link = case name {
+      "ancestor" -> out <> "/parent"
+      "nested" -> out <> "/dist"
+      "metadata" -> out <> "/package.json"
+      _ -> out
+    }
+    let destination = case name {
+      "ancestor" -> link <> "/child"
+      _ -> out
+    }
+    case name {
+      "root" | "dangling" -> Nil
+      _ -> simplifile.create_directory_all(out) |> expect.to_be_ok()
+    }
+    let link_target = case name {
+      "dangling" -> target <> "/missing"
+      "metadata" -> target <> "/sentinel"
+      _ -> target
+    }
+    simplifile.create_symlink(link_target, link) |> expect.to_be_ok()
+    output.write(destination, "unused", "replacement", None)
+    |> expect.to_equal(Error(output.UnsafeFilesystemPath(link)))
+    simplifile.read(target <> "/sentinel")
+    |> expect.to_equal(Ok("unchanged"))
+    simplifile.delete_file(link) |> expect.to_be_ok()
+  })
+  simplifile.delete(root) |> expect.to_be_ok()
+}
+
+pub fn write_rejects_symlinked_artifact_and_hardlink_test() {
+  let pkg = "talc_output_links"
+  let build_pkg = "build/dev/javascript/" <> pkg
+  let out = "test_work/" <> pkg
+  let stubs = setup_full_artifacts(pkg, "mymod")
+  simplifile.create_directory_all(out <> "/dist") |> expect.to_be_ok()
+  simplifile.write(to: out <> "/sentinel", contents: "unchanged")
+  |> expect.to_be_ok()
+  let assert Ok(cwd) = simplifile.current_directory()
+  let target = cwd <> "/" <> out <> "/sentinel"
+  let dest = out <> "/dist/mymod.mjs"
+  simplifile.create_symlink(target, dest) |> expect.to_be_ok()
+  output.write(out, pkg, "replacement", Some(["mymod"]))
+  |> expect.to_equal(Error(output.UnsafeFilesystemPath(dest)))
+  simplifile.delete_file(dest) |> expect.to_be_ok()
+  simplifile.create_link(target, dest) |> expect.to_be_ok()
+  output.write(out, pkg, "replacement", Some(["mymod"]))
+  |> expect.to_be_error()
+  simplifile.read(target) |> expect.to_equal(Ok("unchanged"))
+  simplifile.delete_all([build_pkg, out, ..stubs]) |> expect.to_be_ok()
+}
+
+pub fn write_rejects_stale_modules_and_dependencies_before_writes_test() {
+  let pkg = "talc_output_repeat"
+  let dep = "talc_output_removed_dependency"
+  let build_pkg = "build/dev/javascript/" <> pkg
+  let build_dep = "build/dev/javascript/" <> dep
+  let out = "test_work/" <> pkg
+  let fresh = out <> "_fresh"
+  let stubs = setup_full_artifacts(pkg, "mymod")
+  simplifile.create_directory_all(build_dep) |> expect.to_be_ok()
+  simplifile.write(to: build_dep <> "/old.mjs", contents: "old dependency")
+  |> expect.to_be_ok()
+  simplifile.write(to: build_pkg <> "/private.mjs", contents: "old module")
+  |> expect.to_be_ok()
+  output.write(out, pkg, "original", Some(["mymod"])) |> expect.to_be_ok()
+  simplifile.write(to: out <> "/notes.txt", contents: "user file")
+  |> expect.to_be_ok()
+  output.write(out, pkg, "original", Some(["mymod"])) |> expect.to_be_ok()
+  simplifile.delete_file(build_pkg <> "/private.mjs") |> expect.to_be_ok()
+  output.write(out, pkg, "replacement", Some(["mymod"]))
+  |> expect.to_equal(Error(output.StaleOutput(out <> "/dist/private.mjs")))
+  simplifile.read(out <> "/package.json") |> expect.to_equal(Ok("original"))
+  simplifile.delete_file(out <> "/dist/private.mjs") |> expect.to_be_ok()
+  simplifile.delete(build_dep) |> expect.to_be_ok()
+  output.write(out, pkg, "replacement", Some(["mymod"]))
+  |> expect.to_equal(Error(output.StaleOutput(out <> "/" <> dep <> "/old.mjs")))
+  simplifile.read(out <> "/package.json") |> expect.to_equal(Ok("original"))
+  simplifile.read(out <> "/notes.txt") |> expect.to_equal(Ok("user file"))
+  output.write(fresh, pkg, "fresh", Some(["mymod"])) |> expect.to_be_ok()
+  simplifile.is_file(fresh <> "/dist/private.mjs") |> expect.to_equal(Ok(False))
+  simplifile.is_directory(fresh <> "/" <> dep) |> expect.to_equal(Ok(False))
+  simplifile.delete_all([build_pkg, out, fresh, ..stubs]) |> expect.to_be_ok()
+}

@@ -193,7 +193,7 @@ fn run_generate(
     package_json.sanitize_extras(effective_talc_pre)
 
   // Load package interface for public module discovery
-  use package <- try_ok(interface.load())
+  use package <- try_with_message(interface.load(), interface.error_to_string)
 
   let module_names = interface.public_module_names(package)
 
@@ -204,7 +204,7 @@ fn run_generate(
       effective_talc,
       module_names,
     ),
-    generation_error_to_string,
+    package_json.error_to_string,
   )
 
   // Write output
@@ -287,6 +287,10 @@ fn run_check() -> Result(String, String) {
     gleam_config_error_to_string,
   )
   use talc <- try_ok(talc_config.read(from: "."))
+  use _ <- try_with_message(
+    output.validate_output_dir(talc.package.output_dir),
+    output.error_to_string,
+  )
 
   // When the package interface is available, validate with the real module
   // list so MissingRootModule failures surface here the same as in generate.
@@ -302,9 +306,10 @@ fn run_check() -> Result(String, String) {
         package_json.check_report_with_modules(gleam_config, talc, module_names)
       Ok(report <> interface_info)
     }
-    Error(_) -> {
+    Error(detail) -> {
       let interface_info =
-        "\n⚠ Package interface not available (run `gleam build` first)"
+        "\n⚠ Package interface could not be validated: "
+        <> interface.error_to_string(detail)
       Ok(package_json.check_report(gleam_config, talc) <> interface_info)
     }
   }
@@ -330,17 +335,8 @@ fn gleam_config_error_to_string(error: gleam_toml.ConfigError) -> String {
     gleam_toml.ParseError(msg) -> "gleam.toml parse error: " <> msg
     gleam_toml.MissingField(field) ->
       "gleam.toml missing required field: " <> field
-  }
-}
-
-fn generation_error_to_string(error: package_json.GenerationError) -> String {
-  case error {
-    package_json.MissingRootModule(module) ->
-      "Package root module not found in JavaScript build output: " <> module
-    package_json.InteropExportConflict(module) ->
-      "Public module "
-      <> module
-      <> " conflicts with the reserved './gleam' interop export. Rename the module or override package.json.exports in talc.ccl."
+    gleam_toml.InvalidField(field, expected) ->
+      "gleam.toml " <> field <> " must be " <> expected
   }
 }
 

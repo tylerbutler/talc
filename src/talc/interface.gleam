@@ -10,22 +10,48 @@ import gleam/result
 import gleam/string
 import simplifile
 
+/// Failures to obtain or decode the compiler's package interface.
+pub type LoadError {
+  NotFound
+  TimedOut
+  CommandFailed(exit_code: Int, output: String)
+  ReadFailed(path: String, detail: String)
+  DecodeFailed(detail: String)
+}
+
+/// Formats the specific interface failure for CLI reports.
+pub fn error_to_string(error: LoadError) -> String {
+  case error {
+    NotFound -> "gleam executable not found in PATH"
+    TimedOut -> "Timed out running `gleam export package-interface`"
+    CommandFailed(code, output) ->
+      "`gleam export package-interface` failed with exit code "
+      <> int.to_string(code)
+      <> ":\n"
+      <> string.trim(output)
+    ReadFailed(path, detail) ->
+      "Failed to read package interface output at " <> path <> ": " <> detail
+    DecodeFailed(detail) ->
+      "Failed to decode package interface JSON: " <> detail
+  }
+}
+
 /// Loads the package interface by invoking the Gleam compiler.
 ///
 /// Runs `gleam export package-interface --out <tmpfile>`, reads the
 /// output JSON, and decodes it into a `Package`.
-pub fn load() -> Result(Package, String) {
+pub fn load() -> Result(Package, LoadError) {
   let tmp_path = temp_path()
 
   use #(exit_code, output) <- result.try(case run_gleam_export(tmp_path) {
     Ok(result) -> Ok(result)
     Error(RunNotFound) -> {
       let _ = simplifile.delete(tmp_path)
-      Error("gleam executable not found in PATH")
+      Error(NotFound)
     }
     Error(RunTimeout) -> {
       let _ = simplifile.delete(tmp_path)
-      Error("Timed out running `gleam export package-interface`")
+      Error(TimedOut)
     }
   })
 
@@ -33,19 +59,14 @@ pub fn load() -> Result(Package, String) {
     0 -> Ok(Nil)
     _ -> {
       let _ = simplifile.delete(tmp_path)
-      Error(
-        "`gleam export package-interface` failed with exit code "
-        <> int.to_string(exit_code)
-        <> ":\n"
-        <> string.trim(output),
-      )
+      Error(CommandFailed(exit_code, output))
     }
   })
 
   let read_result =
     simplifile.read(tmp_path)
-    |> result.map_error(fn(_) {
-      "Failed to read package interface output at " <> tmp_path
+    |> result.map_error(fn(error) {
+      ReadFailed(tmp_path, simplifile.describe_error(error))
     })
 
   // Clean up temp file on all paths after successful export
@@ -55,7 +76,7 @@ pub fn load() -> Result(Package, String) {
 
   use package <- result.try(
     json.parse(json_content, package_interface.decoder())
-    |> result.map_error(fn(_) { "Failed to decode package interface JSON" }),
+    |> result.map_error(fn(error) { DecodeFailed(string.inspect(error)) }),
   )
 
   Ok(package)

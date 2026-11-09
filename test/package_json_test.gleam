@@ -95,6 +95,34 @@ pub fn generate_no_license_test() {
   json |> string_contains("\"license\"") |> expect.to_be_false()
 }
 
+pub fn generate_multiple_licences_requires_explicit_override_test() {
+  let config =
+    GleamConfig(..test_gleam_config(), licences: ["MIT", "Apache-2.0"])
+  package_json.generate(config, test_talc_config())
+  |> expect.to_equal(Error(package_json.AmbiguousLicences))
+  package_json.check_report(config, test_talc_config())
+  |> expect.string_to_contain(
+    "require an explicit package.json license override",
+  )
+}
+
+pub fn generate_preserves_explicit_license_override_test() {
+  let gleam =
+    GleamConfig(..test_gleam_config(), licences: ["MIT", "Apache-2.0"])
+  list.each(
+    ["MIT OR Apache-2.0", "MIT AND Apache-2.0", "SEE LICENSE IN LICENSE"],
+    fn(license) {
+      let talc =
+        TalcConfig(..test_talc_config(), extra_fields: [
+          #("license", json.string(license)),
+        ])
+      package_json.generate(gleam, talc)
+      |> expect.to_be_ok()
+      |> expect.string_to_contain("\"license\":\"" <> license <> "\"")
+    },
+  )
+}
+
 pub fn generate_with_peer_deps_test() {
   let gleam = test_gleam_config()
   let talc =

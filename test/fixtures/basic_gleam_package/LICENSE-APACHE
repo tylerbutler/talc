@@ -1,0 +1,2 @@
+Apache named-license asset marker for packaging tests.
+These bytes must survive generation, npm pack, and installation.

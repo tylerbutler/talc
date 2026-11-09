@@ -50,8 +50,31 @@ Require `.mjs` and `.d.mts` artifacts for each public module and the Gleam
 support module, plus the prelude files. Report missing artifacts instead of
 generating replacement types. Preserve existing explicit metadata overrides.
 
-Copy `README.md` and `LICENSE` when available. Preserve safe output-path
-validation and npm error reporting.
+Copy `README.md`, `LICENSE`, `LICENSE-MIT`, and `LICENSE-APACHE` when available,
+without changing their bytes. Missing assets are valid; report inspection and
+copy failures for present assets.
+
+Use a single `gleam.toml` licence as npm `license` metadata. For multiple
+licences, require an explicit `package.json.license` override in `talc.ccl`.
+The author supplies the intended SPDX expression or npm license reference;
+talc does not choose OR/AND terms. Preserve explicit overrides.
+
+Require a non-root relative output path using forward slashes. Reject absolute,
+drive-qualified, UNC, backslash, parent-traversal, NUL, and trailing-dot/space
+path forms. Reject symbolic links in output components and output trees,
+including dangling links, and reject multiply linked files. Do not follow links
+while scanning build artifacts or selected assets.
+
+Plan the output and check existing files before writing. Reject obsolete
+JavaScript/declaration artifacts and selected assets with instructions to choose
+fresh output. Preserve user files; do not reconcile or delete unowned output.
+Repeat generation remains valid when existing artifacts belong to the current
+plan. `pack` and `publish` stop when generation fails.
+
+Missing optional configuration retains defaults. Reject malformed present
+configuration values and `licences` arrays instead of dropping entries. Keep
+interface command, timeout, read, and decode reasons in `check` reports without
+claiming interface validation succeeded. Preserve npm error reporting.
 
 ## JavaScript and TypeScript boundary
 

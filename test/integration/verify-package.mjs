@@ -11,6 +11,7 @@ const packageDir = path.join(fixture, "npm_dist");
 const metadata = JSON.parse(await readFile(path.join(packageDir, "package.json")));
 
 assert.equal(metadata.peerDependencies, undefined);
+assert.equal(metadata.license, "SEE LICENSE IN LICENSE");
 assert.equal(metadata.exports["."].import, "./dist/basic_gleam_package.mjs");
 assert.equal(metadata.exports["."].types, "./dist/basic_gleam_package.d.mts");
 assert.equal(
@@ -42,6 +43,15 @@ try {
     path.join(consumerDir, packed[0].filename),
   ], consumerDir);
   const installedDir = path.join(consumerDir, "node_modules/basic_gleam_package");
+
+  for (const asset of ["LICENSE", "LICENSE-MIT", "LICENSE-APACHE"]) {
+    assert.ok(packed[0].files.some(file => file.path === asset), `${asset} is packed`);
+    assert.deepEqual(
+      await readFile(path.join(installedDir, asset)),
+      await readFile(path.join(fixture, asset)),
+      `${asset} stays unchanged in the tarball`,
+    );
+  }
 
   const artifacts = [
     "basic_gleam_package.mjs",
