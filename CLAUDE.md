@@ -4,8 +4,8 @@
 
 An npm packaging tool for Gleam libraries. Runs on Erlang/BEAM. Reads Gleam JavaScript build
 output (`build/dev/javascript`) and produces a publish-ready npm package directory with a
-generated `package.json`, Gleam's native `.d.mts` type declarations, and optional true-myth
-wrapper modules for Result/Option types. Provides workflow commands (`pack`, `publish`).
+generated `package.json` and Gleam's native `.d.mts` type declarations.
+Provides workflow commands (`pack`, `publish`).
 
 ### Type Strategy
 
@@ -13,10 +13,10 @@ talc uses Gleam's own `.d.mts` files (generated via `[javascript] typescript_dec
 in `gleam.toml`) as the source of truth for TypeScript types. These are always correct because
 the same compiler produces both the `.mjs` and `.d.mts` files.
 
-When `use_true_myth = true` (the default), talc generates thin wrapper modules that convert
-top-level `Result` and `Option` types to `true-myth` `Result` and `Maybe` types, providing
-a more ergonomic API for TypeScript consumers. The `true-myth` package is automatically added
-as a peer dependency.
+talc copies compiler output without parsing declarations or converting values.
+Public module exports point to native `.mjs` and `.d.mts` files. The `./gleam`
+export provides compiler interop functions. Copy private modules and local FFI
+artifacts for runtime imports; do not expose them as automatic public exports.
 
 ## Build Commands
 
@@ -54,24 +54,23 @@ src/
 ├── talc_npm_ffi.erl         # Erlang FFI: npm pack/publish
 └── talc/
     ├── gleam_toml.gleam     # gleam.toml parser → GleamConfig
-    ├── talc_config.gleam    # talc.ccl parser → TalcConfig (includes use_true_myth option)
+    ├── talc_config.gleam    # talc.ccl parser → TalcConfig
     ├── package_json.gleam   # package.json generation with sub-path exports
-    ├── output.gleam         # File I/O: write output dir, copy .mjs/.d.mts, write wrappers
+    ├── output.gleam         # File I/O: write output dir, copy native and FFI artifacts
     ├── interface.gleam      # Package interface loader (gleam CLI → gleam_package_interface)
-    ├── wrapper.gleam        # true-myth wrapper .mjs/.d.ts generator for Result/Option
     └── npm.gleam            # npm CLI wrapper (pack, publish, flag building)
 test/
 ├── talc_test.gleam          # Test runner entry point
 ├── gleam_toml_test.gleam    # gleam.toml parsing tests
-├── talc_config_test.gleam   # talc.ccl parsing tests (includes use_true_myth)
+├── talc_config_test.gleam   # talc.ccl parsing tests
 ├── package_json_test.gleam  # JSON generation tests
 ├── output_test.gleam        # Output directory and artifact copy tests
-├── wrapper_test.gleam       # true-myth wrapper generation tests
 ├── npm_test.gleam           # npm flag building tests
 ├── fixtures/                # Integration fixture projects
 │   └── basic_gleam_package/ # Used by just test-integration
 └── integration/             # Node.js integration verifiers
-    └── verify-package.mjs
+    ├── consumer.mts        # Strict TypeScript consumer
+    └── verify-package.mjs  # Installed npm tarball runtime and type checks
 ```
 
 ## Architecture
@@ -142,7 +141,7 @@ gleam test
 
 Managed via `.tool-versions` (source of truth for CI):
 - Erlang 27.2.1
-- Gleam 1.14.0
+- Gleam 1.16.0
 - just 1.38.0
 
 Local development can use `.mise.toml` for flexible versions.

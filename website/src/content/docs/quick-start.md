@@ -5,6 +5,8 @@ description: Generate your first npm package with talc.
 
 This guide walks through generating an npm package from a Gleam library.
 
+Use Gleam 1.16 or later so the build includes external type declarations.
+
 ## 1. Add talc to your project
 
 ```sh
@@ -59,10 +61,13 @@ npm_dist/
     ├── gleam.d.mts
     ├── mylib.mjs
     ├── mylib.d.mts
-    └── _wrapper/
-        ├── mylib.mjs
-        └── mylib.d.ts
+    └── ...                  # Private modules and local FFI artifacts
 ```
+
+Import public modules by package name. Use `<package>/gleam` for native
+Result, List, and BitArray helpers. See
+[Gleam's externals documentation](https://gleam.run/documentation/externals/)
+for constructors and accessors.
 
 ## 7. Pack or publish
 

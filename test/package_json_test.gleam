@@ -1,7 +1,6 @@
 import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/set
 import gleam/string
 import startest/expect
 import talc/gleam_toml.{type GleamConfig, GleamConfig, Repository}
@@ -41,7 +40,6 @@ pub fn generate_esm_exports_test() {
 
   let json = package_json.generate(gleam, talc) |> expect.to_be_ok()
   json |> string_contains("./dist/my_lib.mjs") |> expect.to_be_true()
-  // Default config has use_true_myth=true but no wrapped modules → native .d.mts
   json |> string_contains("./dist/my_lib.d.mts") |> expect.to_be_true()
   json |> string_contains("\"exports\"") |> expect.to_be_true()
 }
@@ -289,96 +287,85 @@ pub fn extra_fields_nested_object_test() {
   result |> string_contains("\"Test Author\"") |> expect.to_be_true()
 }
 
-pub fn generate_with_true_myth_peer_deps_test() {
-  let gleam = test_gleam_config()
-  let talc = test_talc_config()
-  // Simulate wrapped modules → true-myth should be auto-added
-  let wrapped = set.from_list(["my_lib"])
-
-  let result =
-    package_json.generate_with_modules(gleam, talc, [], wrapped)
-    |> expect.to_be_ok()
-  result |> string_contains("\"peerDependencies\"") |> expect.to_be_true()
-  result |> string_contains("\"true-myth\"") |> expect.to_be_true()
-}
-
-pub fn generate_true_myth_peer_deps_no_override_explicit_test() {
+pub fn generate_preserves_explicit_peer_dependency_test() {
   let gleam = test_gleam_config()
   let talc =
     TalcConfig(..test_talc_config(), peer_dependencies: [
       #("true-myth", ">=9.0.0"),
     ])
-  let wrapped = set.from_list(["my_lib"])
-
   let result =
-    package_json.generate_with_modules(gleam, talc, [], wrapped)
+    package_json.generate_with_modules(gleam, talc, [])
     |> expect.to_be_ok()
-  // Explicit version should take precedence over auto-added
   result
   |> string_contains("\"true-myth\":\">=9.0.0\"")
   |> expect.to_be_true()
 }
 
-pub fn generate_no_true_myth_peer_deps_when_disabled_test() {
-  let gleam = test_gleam_config()
-  let talc = TalcConfig(..test_talc_config(), use_true_myth: False)
-  let wrapped = set.new()
-
-  let result =
-    package_json.generate_with_modules(gleam, talc, [], wrapped)
-    |> expect.to_be_ok()
-  result |> string_contains("\"true-myth\"") |> expect.to_be_false()
-}
-
-pub fn generate_no_peer_deps_when_no_wrapped_modules_test() {
+pub fn generate_no_implicit_peer_dependencies_test() {
   let gleam = test_gleam_config()
   let talc = test_talc_config()
-  let wrapped = set.new()
 
   let result =
-    package_json.generate_with_modules(gleam, talc, [], wrapped)
+    package_json.generate_with_modules(gleam, talc, [])
     |> expect.to_be_ok()
   result |> string_contains("\"peerDependencies\"") |> expect.to_be_false()
 }
 
-pub fn generate_wrapper_paths_when_module_wrapped_test() {
+pub fn generate_native_module_and_interop_exports_test() {
   let gleam = test_gleam_config()
   let talc = test_talc_config()
-  let wrapped = set.from_list(["my_lib"])
 
   let result =
-    package_json.generate_with_modules(gleam, talc, ["my_lib"], wrapped)
+    package_json.generate_with_modules(gleam, talc, ["my_lib", "my_lib/math"])
     |> expect.to_be_ok()
-  // Wrapper paths should be used for wrapped modules
   result
-  |> string_contains("./dist/_wrapper/my_lib.mjs")
+  |> string_contains(
+    "\".\":{\"types\":\"./dist/my_lib.d.mts\",\"import\":\"./dist/my_lib.mjs\"}",
+  )
   |> expect.to_be_true()
   result
-  |> string_contains("./dist/_wrapper/my_lib.d.ts")
+  |> string_contains(
+    "\"./math\":{\"types\":\"./dist/my_lib/math.d.mts\",\"import\":\"./dist/my_lib/math.mjs\"}",
+  )
   |> expect.to_be_true()
-}
-
-pub fn generate_native_paths_when_not_wrapped_test() {
-  let gleam = test_gleam_config()
-  let talc = TalcConfig(..test_talc_config(), use_true_myth: False)
-  let wrapped = set.new()
-
-  let result =
-    package_json.generate_with_modules(gleam, talc, ["my_lib"], wrapped)
-    |> expect.to_be_ok()
-  // Native paths should be used
-  result |> string_contains("./dist/my_lib.mjs") |> expect.to_be_true()
-  result |> string_contains("./dist/my_lib.d.mts") |> expect.to_be_true()
+  result
+  |> string_contains(
+    "\"./gleam\":{\"types\":\"./dist/gleam.d.mts\",\"import\":\"./dist/gleam.mjs\"}",
+  )
+  |> expect.to_be_true()
+  result |> string_contains("_wrapper") |> expect.to_be_false()
+  result |> string_contains("true-myth") |> expect.to_be_false()
 }
 
 pub fn generate_with_modules_requires_root_module_test() {
   let gleam = test_gleam_config()
   let talc = test_talc_config()
   // module_names is non-empty but does not contain "my_lib" (the package root)
-  let result =
-    package_json.generate_with_modules(gleam, talc, ["my_lib/child"], set.new())
+  let result = package_json.generate_with_modules(gleam, talc, ["my_lib/child"])
   let err = result |> expect.to_be_error()
   err |> expect.to_equal(package_json.MissingRootModule("my_lib"))
+}
+
+pub fn generate_rejects_interop_export_collision_test() {
+  package_json.generate_with_modules(test_gleam_config(), test_talc_config(), [
+    "my_lib",
+    "my_lib/gleam",
+  ])
+  |> expect.to_equal(Error(package_json.InteropExportConflict("my_lib/gleam")))
+}
+
+pub fn generate_interop_collision_allows_explicit_exports_test() {
+  let talc =
+    TalcConfig(..test_talc_config(), extra_fields: [
+      #("exports", json.object([#(".", json.string("./dist/my_lib.mjs"))])),
+    ])
+  let _ =
+    package_json.generate_with_modules(test_gleam_config(), talc, [
+      "my_lib",
+      "my_lib/gleam",
+    ])
+    |> expect.to_be_ok()
+  Nil
 }
 
 pub fn generate_with_modules_full_output_overrides_bypass_root_module_test() {
@@ -392,8 +379,7 @@ pub fn generate_with_modules_full_output_overrides_bypass_root_module_test() {
       #("types", json.string("./custom.d.ts")),
     ])
   // module_names is non-empty but root module is absent — should still succeed
-  let result =
-    package_json.generate_with_modules(gleam, talc, ["my_lib/child"], set.new())
+  let result = package_json.generate_with_modules(gleam, talc, ["my_lib/child"])
   result |> expect.to_be_ok()
   Nil
 }
@@ -405,8 +391,7 @@ pub fn generate_with_modules_partial_overrides_still_fail_test() {
     TalcConfig(..test_talc_config(), extra_fields: [
       #("exports", json.object([#(".", json.string("./custom.mjs"))])),
     ])
-  let result =
-    package_json.generate_with_modules(gleam, talc, ["my_lib/child"], set.new())
+  let result = package_json.generate_with_modules(gleam, talc, ["my_lib/child"])
   let err = result |> expect.to_be_error()
   err |> expect.to_equal(package_json.MissingRootModule("my_lib"))
 }
@@ -415,12 +400,10 @@ pub fn generate_with_modules_no_overrides_still_fail_test() {
   let gleam = test_gleam_config()
   let talc = test_talc_config()
   let result =
-    package_json.generate_with_modules(
-      gleam,
-      talc,
-      ["my_lib/child", "my_lib/other"],
-      set.new(),
-    )
+    package_json.generate_with_modules(gleam, talc, [
+      "my_lib/child",
+      "my_lib/other",
+    ])
   let err = result |> expect.to_be_error()
   err |> expect.to_equal(package_json.MissingRootModule("my_lib"))
 }
@@ -430,12 +413,7 @@ pub fn check_report_with_modules_success_test() {
   let talc = test_talc_config()
 
   let report =
-    package_json.check_report_with_modules(
-      gleam,
-      talc,
-      ["my_lib", "my_lib/sub"],
-      set.new(),
-    )
+    package_json.check_report_with_modules(gleam, talc, ["my_lib", "my_lib/sub"])
   report |> string_contains("✓ Package: my_lib") |> expect.to_be_true()
   report |> string_contains("✓ Version: 1.0.0") |> expect.to_be_true()
 }
@@ -446,12 +424,7 @@ pub fn check_report_with_modules_missing_root_fails_test() {
 
   // module_names does not include "my_lib" root
   let report =
-    package_json.check_report_with_modules(
-      gleam,
-      talc,
-      ["my_lib/child"],
-      set.new(),
-    )
+    package_json.check_report_with_modules(gleam, talc, ["my_lib/child"])
   report
   |> string_contains("Failed to generate package.json")
   |> expect.to_be_true()

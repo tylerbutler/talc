@@ -78,12 +78,12 @@ pub fn error_to_string_missing_artifact_test() {
 // ─── write: unsafe dir rejection (no filesystem needed) ─────────────────────
 
 pub fn write_rejects_absolute_output_dir_test() {
-  output.write("/evil/path", "mypkg", "{}", None, [])
+  output.write("/evil/path", "mypkg", "{}", None)
   |> expect.to_equal(Error(UnsafeOutputDir("/evil/path")))
 }
 
 pub fn write_rejects_parent_traversal_test() {
-  output.write("../outside", "mypkg", "{}", None, [])
+  output.write("../outside", "mypkg", "{}", None)
   |> expect.to_equal(Error(UnsafeOutputDir("../outside")))
 }
 
@@ -125,7 +125,7 @@ pub fn write_fails_when_module_mjs_missing_test() {
   let prelude_stubs = setup_full_artifacts(pkg, "mymod")
   let _ = simplifile.delete_file(build_pkg <> "/mymod.mjs")
 
-  let result = output.write(out, pkg, "{}", Some(["mymod"]), [])
+  let result = output.write(out, pkg, "{}", Some(["mymod"]))
 
   let _ = simplifile.delete_all([build_pkg, out, ..prelude_stubs])
   result |> expect.to_be_error()
@@ -140,7 +140,7 @@ pub fn write_fails_when_module_dts_missing_test() {
   let prelude_stubs = setup_full_artifacts(pkg, "mymod")
   let _ = simplifile.delete_file(build_pkg <> "/mymod.d.mts")
 
-  let result = output.write(out, pkg, "{}", Some(["mymod"]), [])
+  let result = output.write(out, pkg, "{}", Some(["mymod"]))
 
   let _ = simplifile.delete_all([build_pkg, out, ..prelude_stubs])
   result |> expect.to_be_error()
@@ -155,7 +155,7 @@ pub fn write_fails_when_gleam_support_mjs_missing_test() {
   let prelude_stubs = setup_full_artifacts(pkg, "mymod")
   let _ = simplifile.delete_file(build_pkg <> "/gleam.mjs")
 
-  let result = output.write(out, pkg, "{}", Some(["mymod"]), [])
+  let result = output.write(out, pkg, "{}", Some(["mymod"]))
 
   let _ = simplifile.delete_all([build_pkg, out, ..prelude_stubs])
   result |> expect.to_be_error()
@@ -175,7 +175,7 @@ pub fn write_copies_dependency_javascript_artifacts_test() {
   let _ =
     simplifile.write(to: build_dep <> "/nested/runtime.d.mts", contents: "")
 
-  let result = output.write(out, pkg, "{}", Some(["mymod"]), [])
+  let result = output.write(out, pkg, "{}", Some(["mymod"]))
   let copied_mjs =
     simplifile.is_file(out <> "/" <> dep <> "/nested/runtime.mjs")
   let copied_dts =
@@ -185,4 +185,42 @@ pub fn write_copies_dependency_javascript_artifacts_test() {
   result |> expect.to_be_ok()
   copied_mjs |> expect.to_equal(Ok(True))
   copied_dts |> expect.to_equal(Ok(True))
+}
+
+pub fn write_copies_private_modules_and_ffi_unchanged_test() {
+  let pkg = "talc_output_test_native"
+  let build_pkg = "build/dev/javascript/" <> pkg
+  let out = "test_work/" <> pkg <> "_out"
+  let prelude_stubs = setup_full_artifacts(pkg, "mymod")
+  let artifacts = [
+    #("internal.mjs", "export const value = 42;"),
+    #("internal.d.mts", "export const value: number;"),
+    #("ffi.js", "export const identity = value => value;"),
+    #("ffi.d.ts", "export function identity<T>(value: T): T;"),
+    #("external.d.mts", "export type Thing = { value: number };"),
+  ]
+  list.each(artifacts, fn(pair) {
+    simplifile.write(to: build_pkg <> "/" <> pair.0, contents: pair.1)
+    |> expect.to_be_ok()
+  })
+  output.write(out, pkg, "{}", Some(["mymod"])) |> expect.to_be_ok()
+  let contents =
+    list.map(artifacts, fn(pair) {
+      #(simplifile.read(out <> "/dist/" <> pair.0), Ok(pair.1))
+    })
+  let _ = simplifile.delete_all([build_pkg, out, ..prelude_stubs])
+  list.each(contents, fn(pair) { pair.0 |> expect.to_equal(pair.1) })
+}
+
+pub fn write_rejects_legacy_wrappers_without_overwriting_test() {
+  let out = "test_work/talc_output_test_legacy"
+  let legacy_dir = out <> "/dist/_wrapper"
+  simplifile.create_directory_all(legacy_dir) |> expect.to_be_ok()
+  simplifile.write(to: out <> "/package.json", contents: "original")
+  |> expect.to_be_ok()
+  let result = output.write(out, "unused", "replacement", None)
+  let original = simplifile.read(out <> "/package.json")
+  let _ = simplifile.delete_all([out])
+  result |> expect.to_equal(Error(output.ExistingWrappers(legacy_dir)))
+  original |> expect.to_equal(Ok("original"))
 }

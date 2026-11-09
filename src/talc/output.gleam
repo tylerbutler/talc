@@ -17,6 +17,8 @@ pub type OutputError {
   UnsafeOutputDir(path: String)
   /// A required build artifact is absent.
   MissingArtifact(src: String, dest: String)
+  /// An output directory still contains wrappers from an earlier generation.
+  ExistingWrappers(path: String)
 }
 
 /// Formats an OutputError as a human-readable string.
@@ -40,6 +42,10 @@ pub fn error_to_string(error: OutputError) -> String {
       <> " (expected at "
       <> dest
       <> ")"
+    ExistingWrappers(path) ->
+      "Legacy wrapper output found at "
+      <> path
+      <> ". Remove it or choose a fresh output directory before generating."
   }
 }
 
@@ -61,24 +67,28 @@ pub fn validate_output_dir(path: String) -> Result(Nil, OutputError) {
 
 /// Creates the output directory structure and writes all output files.
 ///
-/// Copies `.mjs` and `.d.mts` files from the Gleam build output. When
-/// `public_modules` is `Some(list)`, only files for those modules are copied.
-/// When `None`, all files are copied.
-///
-/// `generated_files` is a list of `#(relative_path, content)` pairs for
-/// files to write (e.g., wrapper modules).
+/// Copies JavaScript and declarations, including private modules and FFI.
+/// When `public_modules` is `Some(list)`, checks that those modules and the
+/// Gleam support module have both `.mjs` and `.d.mts` files.
 pub fn write(
   output_dir: String,
   package_name: String,
   package_json: String,
   public_modules: Option(List(String)),
-  generated_files: List(#(String, String)),
 ) -> Result(List(String), OutputError) {
   use _ <- try_result(validate_output_dir(output_dir))
 
   let dist_dir = output_dir <> "/dist"
   let build_dir = "build/dev/javascript/" <> package_name
   let build_parent = "build/dev/javascript"
+
+  let legacy_dir = dist_dir <> "/_wrapper"
+  use _ <- try_result(case simplifile.is_directory(legacy_dir) {
+    Ok(True) -> Error(ExistingWrappers(legacy_dir))
+    Ok(False) | Error(simplifile.Enoent) -> Ok(Nil)
+    Error(error) ->
+      Error(DirectoryError(legacy_dir, file_error_to_string(error)))
+  })
 
   // Create directories
   use _ <- try_result(
@@ -98,7 +108,6 @@ pub fn write(
   use build_files <- try_result(copy_build_files(
     build_dir,
     dist_dir,
-    package_name,
     public_modules,
   ))
 
@@ -113,9 +122,6 @@ pub fn write(
     package_name,
   ))
 
-  // Write generated files (e.g., wrapper modules)
-  use gen_written <- try_result(write_generated_files(dist_dir, generated_files))
-
   // Copy optional files (README.md, LICENSE)
   let optional_files = copy_optional_files(output_dir)
 
@@ -125,87 +131,49 @@ pub fn write(
       build_files,
       prelude_files,
       dependency_files,
-      gen_written,
       optional_files,
     ]),
   )
 }
 
-/// Copies .mjs and .d.mts files from the Gleam build output to dist/.
-/// If public_modules is Some, only copies files for those modules plus
-/// the gleam.mjs/gleam.d.mts support files.
+/// Copies build artifacts without changing their relative import paths.
 fn copy_build_files(
   build_dir: String,
   dist_dir: String,
-  package_name: String,
   public_modules: Option(List(String)),
 ) -> Result(List(String), OutputError) {
   case simplifile.is_directory(build_dir) {
     Ok(True) -> {
-      case public_modules {
-        None ->
-          copy_dir_recursive_multi(build_dir, dist_dir, [".mjs", ".d.mts"])
+      use _ <- try_result(case public_modules {
+        None -> Ok(Nil)
         Some(modules) ->
-          copy_module_files(build_dir, dist_dir, package_name, modules)
-      }
+          validate_module_files(build_dir, dist_dir, ["gleam", ..modules])
+      })
+      copy_dir_recursive_multi(build_dir, dist_dir, artifact_extensions)
     }
     _ -> Error(BuildNotFound(build_dir))
   }
 }
 
-/// Copies .mjs and .d.mts files for specific modules plus gleam support files.
+const artifact_extensions = [".mjs", ".js", ".d.mts", ".d.ts"]
+
+/// Checks artifacts for public modules and the Gleam support module.
 /// Both artifacts are required; missing files return `MissingArtifact`.
-fn copy_module_files(
+fn validate_module_files(
   build_dir: String,
   dist_dir: String,
-  _package_name: String,
   modules: List(String),
-) -> Result(List(String), OutputError) {
-  // Copy module files (.mjs + .d.mts); both are required
-  use module_files_rev <- try_result(
-    list.try_fold(modules, [], fn(acc, module_name) {
-      let extensions = [".mjs", ".d.mts"]
-      list.try_fold(extensions, acc, fn(inner_acc, ext) {
-        let src = build_dir <> "/" <> module_name <> ext
-        let dest = dist_dir <> "/" <> module_name <> ext
-        case simplifile.is_file(src) {
-          Ok(True) -> {
-            let dest_dir = string_before_last(dest, "/")
-            use _ <- try_result(
-              simplifile.create_directory_all(dest_dir)
-              |> map_file_error(DirectoryError(dest_dir, _)),
-            )
-            use _ <- try_result(
-              simplifile.copy_file(at: src, to: dest)
-              |> map_file_error(CopyError(src, dest, _)),
-            )
-            Ok([dest, ..inner_acc])
-          }
-          _ -> Error(MissingArtifact(src, dest))
-        }
-      })
-    }),
-  )
-
-  // Copy gleam.mjs and gleam.d.mts support files; both are required
-  use gleam_files_rev <- try_result(
-    list.try_fold(["gleam.mjs", "gleam.d.mts"], [], fn(acc, file) {
-      let src = build_dir <> "/" <> file
-      let dest = dist_dir <> "/" <> file
+) -> Result(Nil, OutputError) {
+  list.try_fold(modules, Nil, fn(_, module_name) {
+    list.try_fold([".mjs", ".d.mts"], Nil, fn(_, ext) {
+      let src = build_dir <> "/" <> module_name <> ext
+      let dest = dist_dir <> "/" <> module_name <> ext
       case simplifile.is_file(src) {
-        Ok(True) -> {
-          use _ <- try_result(
-            simplifile.copy_file(at: src, to: dest)
-            |> map_file_error(CopyError(src, dest, _)),
-          )
-          Ok([dest, ..acc])
-        }
+        Ok(True) -> Ok(Nil)
         _ -> Error(MissingArtifact(src, dest))
       }
-    }),
-  )
-
-  Ok(list.append(list.reverse(module_files_rev), list.reverse(gleam_files_rev)))
+    })
+  })
 }
 
 /// Copies prelude.mjs and prelude.d.mts from the build parent directory.
@@ -259,38 +227,16 @@ fn copy_dependency_files(
         False ->
           case simplifile.is_directory(src) {
             Ok(True) -> {
-              use copied <- try_result(
-                copy_dir_recursive_multi(src, dest, [".mjs", ".d.mts"]),
-              )
+              use copied <- try_result(copy_dir_recursive_multi(
+                src,
+                dest,
+                artifact_extensions,
+              ))
               Ok(list.fold(copied, acc, fn(a, f) { [f, ..a] }))
             }
             _ -> Ok(acc)
           }
       }
-    }),
-  )
-  Ok(list.reverse(files_rev))
-}
-
-/// Writes generated files to the dist directory.
-fn write_generated_files(
-  dist_dir: String,
-  files: List(#(String, String)),
-) -> Result(List(String), OutputError) {
-  use files_rev <- try_result(
-    list.try_fold(files, [], fn(acc, pair) {
-      let #(rel_path, content) = pair
-      let dest = dist_dir <> "/" <> rel_path
-      let dest_dir = string_before_last(dest, "/")
-      use _ <- try_result(
-        simplifile.create_directory_all(dest_dir)
-        |> map_file_error(DirectoryError(dest_dir, _)),
-      )
-      use _ <- try_result(
-        simplifile.write(to: dest, contents: content)
-        |> map_file_error(WriteError(dest, _)),
-      )
-      Ok([dest, ..acc])
     }),
   )
   Ok(list.reverse(files_rev))
@@ -391,17 +337,5 @@ fn file_error_to_string(error: simplifile.FileError) -> String {
     simplifile.Eisdir -> "is a directory"
     simplifile.Enospc -> "no space left on device"
     _ -> "file system error"
-  }
-}
-
-/// Returns the portion of a string before the last occurrence of a separator.
-fn string_before_last(s: String, sep: String) -> String {
-  case string.split(s, sep) {
-    [] -> s
-    [only] -> only
-    parts -> {
-      let assert [_, ..rest] = list.reverse(parts)
-      list.reverse(rest) |> string.join(sep)
-    }
   }
 }

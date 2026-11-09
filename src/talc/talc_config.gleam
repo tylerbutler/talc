@@ -37,9 +37,6 @@ pub type TalcConfig {
     package: PackageConfig,
     extra_fields: List(#(String, json.Json)),
     peer_dependencies: List(#(String, String)),
-    /// When True, generate wrapper modules that convert top-level Result/Option
-    /// to true-myth types. Adds true-myth as a peer dependency.
-    use_true_myth: Bool,
   )
 }
 
@@ -54,7 +51,6 @@ pub fn default() -> TalcConfig {
     ),
     extra_fields: [],
     peer_dependencies: [],
-    use_true_myth: True,
   )
 }
 
@@ -91,16 +87,26 @@ pub fn parse(content: String) -> Result(TalcConfig, String) {
 
   let ccl = hierarchy.build_hierarchy(entries)
 
+  use _ <- result.try(case dict.get(ccl, "package") {
+    Ok(CclObject(fields)) ->
+      case dict.has_key(fields, "use_true_myth") {
+        True ->
+          Error(
+            "package.use_true_myth is no longer supported. Remove it from talc.ccl; talc packages native Gleam types.",
+          )
+        False -> Ok(Nil)
+      }
+    _ -> Ok(Nil)
+  })
+
   let package = parse_package(ccl)
   let extra_fields = parse_extra_fields(ccl)
   let peer_dependencies = parse_peer_dependencies(ccl)
-  let use_true_myth = parse_use_true_myth(ccl)
 
   Ok(TalcConfig(
     package: package,
     extra_fields: extra_fields,
     peer_dependencies: peer_dependencies,
-    use_true_myth: use_true_myth,
   ))
 }
 
@@ -193,12 +199,5 @@ fn parse_peer_dependencies(ccl: CCL) -> List(#(String, String)) {
         }
       })
     _ -> []
-  }
-}
-
-fn parse_use_true_myth(ccl: CCL) -> Bool {
-  case access.get_string(ccl, ["package", "use_true_myth"]) {
-    Ok("false") -> False
-    _ -> True
   }
 }

@@ -8,7 +8,6 @@ import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
-import gleam/set.{type Set}
 import gleam/string
 import talc/gleam_toml.{type GleamConfig}
 import talc/talc_config.{type TalcConfig, TalcConfig}
@@ -51,6 +50,8 @@ pub type GenerationError {
   /// provided module list. This means the JavaScript build output is missing the
   /// root module file that the root export would point to.
   MissingRootModule(String)
+  /// A public module would overwrite the compiler's `./gleam` export.
+  InteropExportConflict(String)
 }
 
 /// Returns True when `talc_config.extra_fields` overrides every field that
@@ -72,20 +73,27 @@ pub fn generate(
   gleam_config: GleamConfig,
   talc_config: TalcConfig,
 ) -> Result(String, GenerationError) {
-  generate_with_modules(gleam_config, talc_config, [], set.new())
+  generate_with_modules(gleam_config, talc_config, [])
 }
 
 /// Generates package.json with sub-path exports for the given modules.
 ///
-/// When `use_true_myth` is enabled in config, exports point at wrapper
-/// modules and true-myth is added as a peer dependency.
-/// `wrapped_modules` is the set of module names that have wrapper files.
+/// Exports point at native Gleam output, including the `gleam` interop module.
 pub fn generate_with_modules(
   gleam_config: GleamConfig,
   talc_config: TalcConfig,
   module_names: List(String),
-  wrapped_modules: Set(String),
 ) -> Result(String, GenerationError) {
+  let interop_module = gleam_config.name <> "/gleam"
+  let overrides_exports =
+    list.any(talc_config.extra_fields, fn(pair) { pair.0 == "exports" })
+  use _ <- result.try(
+    case list.contains(module_names, interop_module) && !overrides_exports {
+      True -> Error(InteropExportConflict(interop_module))
+      False -> Ok(Nil)
+    },
+  )
+
   // When a module list is provided, require the root module to be present —
   // unless extra_fields fully overrides all auto-generated entrypoint fields,
   // in which case the root-module paths are never emitted.
@@ -119,22 +127,11 @@ pub fn generate_with_modules(
       [] -> []
     }
 
-    let esm_fields =
-      build_esm_fields(
-        gleam_config.name,
-        module_names,
-        talc_config.use_true_myth,
-        wrapped_modules,
-      )
+    let esm_fields = build_esm_fields(gleam_config.name, module_names)
     let repository_fields = build_repository_fields(gleam_config)
     let extra_fields = build_extra_fields(talc_config)
     let publish_config_fields = build_publish_config_fields(talc_config)
-    let peer_dep_fields =
-      build_peer_dep_fields(
-        talc_config,
-        talc_config.use_true_myth,
-        wrapped_modules,
-      )
+    let peer_dep_fields = build_peer_dep_fields(talc_config)
 
     // Extra fields from [package.json] override auto-generated fields
     let extra_keys =
@@ -169,42 +166,36 @@ fn build_npm_name(name: String, config: TalcConfig) -> String {
 }
 
 /// Builds ESM module entry point fields with sub-path exports.
-///
-/// When `use_true_myth` is true and a module has wrapper files,
-/// exports point at the wrapper; otherwise they point at native Gleam output.
 fn build_esm_fields(
   package_name: String,
   module_names: List(String),
-  use_true_myth: Bool,
-  wrapped_modules: Set(String),
 ) -> List(#(String, json.Json)) {
-  let #(main_path, types_path) =
-    module_paths(package_name, package_name, use_true_myth, wrapped_modules)
+  let #(main_path, types_path) = module_paths(package_name)
 
   let root_export = #(
     ".",
     json.object([
-      #("import", json.string(main_path)),
       #("types", json.string(types_path)),
+      #("import", json.string(main_path)),
     ]),
   )
 
-  // Build sub-path exports for non-root public modules
+  // Include the compiler's native interop API alongside public modules.
   let sub_exports =
-    module_names
+    ["gleam", ..module_names]
+    |> list.unique
     |> list.filter(fn(m) { m != package_name })
     |> list.sort(string.compare)
     |> list.map(fn(module_name) {
       let sub_path =
         "./"
         <> string.replace(strip_prefix(module_name, package_name), "/", "/")
-      let #(mjs_path, dts_path) =
-        module_paths(module_name, package_name, use_true_myth, wrapped_modules)
+      let #(mjs_path, dts_path) = module_paths(module_name)
       #(
         sub_path,
         json.object([
-          #("import", json.string(mjs_path)),
           #("types", json.string(dts_path)),
+          #("import", json.string(mjs_path)),
         ]),
       )
     })
@@ -219,23 +210,9 @@ fn build_esm_fields(
   ]
 }
 
-/// Returns the (mjs_path, types_path) for a module based on wrapper mode.
-fn module_paths(
-  module_name: String,
-  _package_name: String,
-  use_true_myth: Bool,
-  wrapped_modules: Set(String),
-) -> #(String, String) {
-  case use_true_myth && set.contains(wrapped_modules, module_name) {
-    True -> #(
-      "./dist/_wrapper/" <> module_name <> ".mjs",
-      "./dist/_wrapper/" <> module_name <> ".d.ts",
-    )
-    False -> #(
-      "./dist/" <> module_name <> ".mjs",
-      "./dist/" <> module_name <> ".d.mts",
-    )
-  }
+/// Returns the native JavaScript and declaration paths for a module.
+fn module_paths(module_name: String) -> #(String, String) {
+  #("./dist/" <> module_name <> ".mjs", "./dist/" <> module_name <> ".d.mts")
 }
 
 /// Strips the package name prefix from a module name.
@@ -296,31 +273,8 @@ fn build_extra_fields(config: TalcConfig) -> List(#(String, json.Json)) {
 }
 
 /// Builds peerDependencies field from talc.ccl config.
-/// When true-myth wrappers are enabled and any modules were wrapped,
-/// true-myth is automatically added as a peer dependency.
-fn build_peer_dep_fields(
-  config: TalcConfig,
-  use_true_myth: Bool,
-  wrapped_modules: Set(String),
-) -> List(#(String, json.Json)) {
-  let explicit_keys =
-    config.peer_dependencies
-    |> list.map(fn(pair) { pair.0 })
-    |> set.from_list()
-
-  // Auto-add true-myth when enabled and wrappers were generated
-  let auto_deps = case
-    use_true_myth
-    && set.size(wrapped_modules) > 0
-    && !set.contains(explicit_keys, "true-myth")
-  {
-    True -> [#("true-myth", ">=8.0.0")]
-    False -> []
-  }
-
-  let all_deps = list.append(config.peer_dependencies, auto_deps)
-
-  case all_deps {
+fn build_peer_dep_fields(config: TalcConfig) -> List(#(String, json.Json)) {
+  case config.peer_dependencies {
     [] -> []
     deps -> {
       let dep_object =
@@ -361,7 +315,7 @@ pub fn check_report(
   gleam_config: GleamConfig,
   talc_config: TalcConfig,
 ) -> String {
-  check_report_with_modules(gleam_config, talc_config, [], set.new())
+  check_report_with_modules(gleam_config, talc_config, [])
 }
 
 /// Generates a pretty-printed validation report using the given module list.
@@ -373,16 +327,10 @@ pub fn check_report_with_modules(
   gleam_config: GleamConfig,
   talc_config: TalcConfig,
   module_names: List(String),
-  wrapped_modules: Set(String),
 ) -> String {
   let validation = validate(gleam_config)
   let generation =
-    generate_with_modules(
-      gleam_config,
-      talc_config,
-      module_names,
-      wrapped_modules,
-    )
+    generate_with_modules(gleam_config, talc_config, module_names)
 
   case validation, generation {
     Ok(_), Ok(json_str) -> {
