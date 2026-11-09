@@ -197,24 +197,15 @@ peer_dependencies =
   Nil
 }
 
-pub fn default_use_true_myth_test() {
-  let config = talc_config.default()
-  config.use_true_myth |> expect.to_be_true()
-}
-
-pub fn parse_use_true_myth_default_test() {
-  let config = talc_config.parse("") |> expect.to_be_ok()
-  config.use_true_myth |> expect.to_be_true()
-}
-
-pub fn parse_use_true_myth_explicit_true_test() {
+pub fn parse_rejects_removed_true_myth_option_test() {
   let ccl =
     "package =
   use_true_myth = true
 "
 
-  let config = talc_config.parse(ccl) |> expect.to_be_ok()
-  config.use_true_myth |> expect.to_be_true()
+  talc_config.parse(ccl)
+  |> expect.to_be_error()
+  |> expect_string_contains("package.use_true_myth is no longer supported")
 }
 
 pub fn parse_use_true_myth_false_test() {
@@ -223,6 +214,7 @@ pub fn parse_use_true_myth_false_test() {
   use_true_myth = false
 "
 
-  let config = talc_config.parse(ccl) |> expect.to_be_ok()
-  config.use_true_myth |> expect.to_be_false()
+  talc_config.parse(ccl)
+  |> expect.to_be_error()
+  |> expect_string_contains("Remove it from talc.ccl")
 }

@@ -40,7 +40,7 @@ test-integration:
     FIXTURE=test/fixtures/basic_gleam_package
 
     # Clean fixture artifacts so root gleam build isn't affected by .erl files
-    rm -rf "$FIXTURE/build" "$FIXTURE/npm_dist"
+    rm -rf test/fixtures/basic_gleam_package/build test/fixtures/basic_gleam_package/npm_dist
 
     echo "→ Building talc (Erlang)..."
     gleam build
@@ -57,8 +57,8 @@ test-integration:
     (cd "$FIXTURE" && erl -noshell "${EBIN_FLAGS[@]}" \
       -eval 'talc:main(), erlang:halt(0).' -extra generate)
 
-    echo "→ Installing true-myth peer dependency..."
-    (cd "$FIXTURE" && npm install --no-fund --quiet)
+    echo "→ Installing TypeScript for consumer checks..."
+    (cd "$FIXTURE" && npm install --no-fund --quiet --package-lock=false --ignore-scripts)
 
     echo "→ Running Node verifier..."
     node test/integration/verify-package.mjs
@@ -67,7 +67,7 @@ test-integration:
     (cd "$FIXTURE/npm_dist" && npm pack --dry-run --quiet)
 
     echo "→ Cleaning fixture build artifacts..."
-    rm -rf "$FIXTURE/build" "$FIXTURE/npm_dist"
+    rm -rf test/fixtures/basic_gleam_package/build test/fixtures/basic_gleam_package/npm_dist
 
     echo "✓ Integration tests passed"
 

@@ -9,7 +9,7 @@ Ensure you have the following installed:
 | Tool | Version | Purpose |
 |------|---------|---------|
 | Erlang/OTP | 27.2.1+ | BEAM runtime |
-| Gleam | 1.14.0+ | Compiler and tooling |
+| Gleam | 1.16.0+ | Compiler and tooling |
 | just | 1.38.0+ | Task runner |
 
 **Recommended:** Use [mise](https://mise.jdx.dev/) or [asdf](https://asdf-vm.com/) with the provided `.tool-versions` file.
@@ -79,7 +79,6 @@ just main
 │       ├── package_json.gleam   # package.json generation
 │       ├── output.gleam         # File I/O: write output dir, copy artifacts
 │       ├── interface.gleam      # Package interface loader
-│       ├── wrapper.gleam        # true-myth wrapper generator
 │       └── npm.gleam            # npm CLI wrapper
 ├── test/
 │   ├── talc_test.gleam          # Test runner entry point
@@ -87,7 +86,6 @@ just main
 │   ├── talc_config_test.gleam
 │   ├── package_json_test.gleam
 │   ├── output_test.gleam
-│   ├── wrapper_test.gleam
 │   ├── npm_test.gleam
 │   ├── fixtures/                # Integration fixture projects
 │   └── integration/             # Node.js integration verifiers
@@ -164,6 +162,10 @@ just test
 # Run fixture-based integration test (requires npm)
 just test-integration
 ```
+
+The integration test builds a fixture, installs its npm tarball into a
+separate consumer directory, and checks native runtime values, public exports,
+private-module FFI, and strict TypeScript declaration resolution.
 
 ### Writing Tests
 

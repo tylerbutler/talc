@@ -1,16 +1,13 @@
 /// talc — npm packaging tool for Gleam libraries.
 ///
 /// Reads a compiled Gleam project and produces a publish-ready npm package
-/// directory with Gleam's native `.d.mts` type declarations and optional
-/// true-myth wrapper modules for Result/Option types.
+/// directory with Gleam's native JavaScript and `.d.mts` type declarations.
 import argv
-import gleam/dict
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/set
 import glint
 import talc/gleam_toml
 import talc/interface
@@ -18,7 +15,6 @@ import talc/npm
 import talc/output
 import talc/package_json
 import talc/talc_config
-import talc/wrapper_metadata
 
 pub fn main() {
   glint.new()
@@ -196,46 +192,10 @@ fn run_generate(
   let #(effective_talc, sanitize_warnings) =
     package_json.sanitize_extras(effective_talc_pre)
 
-  // Load package interface for module discovery and function signatures
+  // Load package interface for public module discovery
   use package <- try_ok(interface.load())
 
   let module_names = interface.public_module_names(package)
-
-  // Generate wrapper files if use_true_myth is enabled
-  let #(generated_files, wrapped_modules, all_warnings) = case
-    effective_talc.use_true_myth
-  {
-    True -> {
-      dict.to_list(package.modules)
-      |> list.fold(#([], set.new(), []), fn(acc, pair) {
-        let #(files, wrapped, warnings) = acc
-        let #(module_name, module) = pair
-        let #(result, module_warnings) =
-          wrapper_metadata.generate_module_wrapper_with_metadata(
-            gleam_config.name,
-            module_name,
-            module,
-          )
-        let warnings = list.append(warnings, module_warnings)
-        case result.has_wrapped_functions {
-          True -> {
-            let wrapper_mjs_path = "_wrapper/" <> module_name <> ".mjs"
-            let wrapper_dts_path = "_wrapper/" <> module_name <> ".d.ts"
-            #(
-              list.append(files, [
-                #(wrapper_mjs_path, result.mjs),
-                #(wrapper_dts_path, result.dts),
-              ]),
-              set.insert(wrapped, module_name),
-              warnings,
-            )
-          }
-          False -> #(files, wrapped, warnings)
-        }
-      })
-    }
-    False -> #([], set.new(), [])
-  }
 
   // Generate package.json with sub-path exports
   use json_str <- try_with_message(
@@ -243,7 +203,6 @@ fn run_generate(
       gleam_config,
       effective_talc,
       module_names,
-      wrapped_modules,
     ),
     generation_error_to_string,
   )
@@ -255,12 +214,11 @@ fn run_generate(
       gleam_config.name,
       json_str,
       Some(module_names),
-      generated_files,
     )
     |> map_error(output.error_to_string),
   )
 
-  Ok(#(written, list.append(sanitize_warnings, all_warnings), effective_talc))
+  Ok(#(written, sanitize_warnings, effective_talc))
 }
 
 /// Returns `["--ignore-scripts"]` unless the user has explicitly opted in to
@@ -341,12 +299,7 @@ fn run_check() -> Result(String, String) {
         <> int.to_string(module_count)
         <> " public module(s)"
       let report =
-        package_json.check_report_with_modules(
-          gleam_config,
-          talc,
-          module_names,
-          set.new(),
-        )
+        package_json.check_report_with_modules(gleam_config, talc, module_names)
       Ok(report <> interface_info)
     }
     Error(_) -> {
@@ -384,6 +337,10 @@ fn generation_error_to_string(error: package_json.GenerationError) -> String {
   case error {
     package_json.MissingRootModule(module) ->
       "Package root module not found in JavaScript build output: " <> module
+    package_json.InteropExportConflict(module) ->
+      "Public module "
+      <> module
+      <> " conflicts with the reserved './gleam' interop export. Rename the module or override package.json.exports in talc.ccl."
   }
 }
 

@@ -13,7 +13,7 @@ Gleam can compile libraries to JavaScript, but npm packages need more than compi
 - compiled `.mjs` files copied from `build/dev/javascript`
 - Gleam compiler-generated `.d.mts` declarations copied from the same build
 - dependency JavaScript artifacts placed next to `dist/` for runtime imports
-- optional true-myth wrapper modules for top-level `Result` and `Option` types
+- private modules and local JavaScript FFI artifacts needed by public functions
 
 ## TypeScript support
 
@@ -21,8 +21,23 @@ talc uses Gleam's own `.d.mts` declaration files as the source of truth for Type
 
 Multi-module packages receive sub-path exports in `package.json` for each public module.
 
-## true-myth wrappers
+## Native interop
 
-When `use_true_myth = true` (the default), talc generates thin wrapper modules for public modules whose functions use top-level `Result` or `Option` values. These wrappers convert to and from [true-myth](https://true-myth.js.org/) `Result` and `Maybe` types for a more ergonomic TypeScript API.
+Consumers use native Gleam values. Import the compiler's Result, List, and
+BitArray helpers from `<package>/gleam`. Import custom-type constructors and
+accessors from the public module that defines the type.
 
-Only modules that use `Result` or `Option` get wrappers. talc adds `true-myth` as a peer dependency only when at least one wrapper is generated.
+Follow [Gleam's externals documentation](https://gleam.run/documentation/externals/)
+for the supported JavaScript API. talc copies declarations without parsing or
+rewriting types. It preserves private modules and local FFI files, but only
+exports public modules and the `./gleam` support module.
+
+Authors must supply external declarations and configure npm dependencies
+used by bare imports. talc does not check external implementations.
+
+## Migrating from true-myth
+
+Remove `package.use_true_myth` from `talc.ccl` and update consumers to native
+Gleam values. Use fresh output or remove the legacy `dist/_wrapper` directory
+before generating. talc rejects the removed option and legacy wrapper output
+with migration instructions.

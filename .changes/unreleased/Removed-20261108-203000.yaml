@@ -1,0 +1,5 @@
+kind: Removed
+body: |
+  Remove true-myth wrappers and package native Gleam APIs.
+  talc requires Gleam 1.16 or later and exports compiler JavaScript and declarations, including the `./gleam` interop module. It preserves private modules and local JavaScript FFI artifacts. Remove `package.use_true_myth` from `talc.ccl` and use fresh output or remove legacy `dist/_wrapper` files before generating. Consumers must migrate from true-myth values to native Gleam values.
+time: 2026-11-08T20:30:00-08:00

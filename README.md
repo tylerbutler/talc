@@ -10,7 +10,13 @@ publish-ready npm package directory with:
 - compiled `.mjs` files copied from `build/dev/javascript`
 - Gleam compiler-generated `.d.mts` declarations copied from the same build
 - dependency JS artifacts placed next to `dist/` for runtime imports
-- optional true-myth wrapper modules for top-level `Result` and `Option` types
+- local JavaScript FFI files and private modules needed by public functions
+
+The MVP packages native Gleam output without API or type conversion. See
+[PRD.md](./PRD.md) for the scope and acceptance criteria.
+
+Requires Gleam 1.16 or later so the JavaScript build includes external type
+declaration files.
 
 ## Installation
 
@@ -71,9 +77,7 @@ npm_dist/
     ├── gleam.d.mts           # Gleam support types
     ├── mylib.mjs             # Compiled JS from build/dev/javascript
     ├── mylib.d.mts           # Compiler-generated TypeScript declarations
-    └── _wrapper/             # Optional true-myth wrappers (when use_true_myth = true)
-        ├── mylib.mjs         # Wrapper module converting Result/Option to true-myth
-        └── mylib.d.ts        # Wrapper type declarations
+    └── ...                  # Private modules and local FFI artifacts
 ```
 
 ### TypeScript Support
@@ -84,27 +88,57 @@ the compiler generates both the `.mjs` and `.d.mts` files together, the
 declarations are always accurate — no separate generation step.
 
 Multi-module packages receive sub-path exports in `package.json` for each
-public module.
+public module. The `./gleam` export provides the compiler's interop functions.
+Each export lists `types` before `import` for TypeScript module resolution.
+The automatic `./gleam` export is reserved. If you have a public module named
+`<package>/gleam`, rename it or supply an explicit `package.json.exports`
+override in `talc.ccl`.
 
-### true-myth Wrappers
+### Native JavaScript interop
 
-When `use_true_myth = true` (the default), talc generates thin wrapper modules
-for any public module whose functions have top-level `Result` or `Option` in
-their parameter or return types. These wrappers convert to/from
-[true-myth](https://true-myth.js.org/) `Result` and `Maybe` types for a more
-ergonomic TypeScript API.
+Use the functions in [Gleam's externals documentation](https://gleam.run/documentation/externals/#gleam-data-in-javascript)
+to construct and inspect native values. For a library named `mylib` with a
+`parse_positive` function:
 
-- Only modules that actually use `Result`/`Option` get a wrapper; others are
-  skipped.
-- `true-myth` is added as a `peerDependency` only when at least one wrapper is
-  generated.
-- Set `package.use_true_myth = false` in `talc.ccl` to disable wrapper
-  generation entirely:
+```js
+import { parse_positive } from "mylib";
+import { Result$isOk, Result$Ok$0, Result$Error$0 } from "mylib/gleam";
 
-  ```ccl
-  package =
-    use_true_myth = false
-  ```
+const result = parse_positive("42");
+if (Result$isOk(result)) {
+  console.log(Result$Ok$0(result));
+} else {
+  console.error(Result$Error$0(result));
+}
+```
+
+For your public custom types, import compiler-generated constructors and
+accessors from the module that defines the type, such as `Person$Person` and
+`Person$Person$name`. Do not depend on undocumented object fields.
+
+talc preserves local `.mjs`, `.js`, `.d.mts`, and `.d.ts` artifacts and their
+relative paths, including private modules. It only exports public modules and
+`./gleam`. It does not check external implementations or create declarations
+for them. Authors must supply correct external type declarations and declare
+npm dependencies used by bare imports through `package.json` overrides or
+`peer_dependencies` in `talc.ccl`.
+
+Dependency modules such as `gleam/option` remain package implementation
+details. If consumers need their constructors or helpers, provide a public
+Gleam module that re-exports the required operations, or configure explicit
+exports. talc does not add dependency export wildcards.
+
+### Migration from true-myth
+
+Remove `package.use_true_myth` from `talc.ccl`, whether its value is `true` or
+`false`. talc rejects this removed option with a migration error. Update
+consumers to use native Gleam values and helpers instead of true-myth values.
+Remove any true-myth dependency that you no longer use.
+
+Use a fresh output directory or remove the old `dist/_wrapper` directory
+before generating. talc rejects output directories that still contain that
+directory so that npm does not publish stale wrappers. It does not delete
+existing output for you.
 
 ### Configuration
 
@@ -160,7 +194,7 @@ jobs:
         uses: erlef/setup-beam@v1
         with:
           otp-version: "27"
-          gleam-version: "1.14"
+          gleam-version: "1.16"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
