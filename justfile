@@ -71,6 +71,10 @@ test-integration:
 
     echo "✓ Integration tests passed"
 
+# Run the pinned real-library Spruce acceptance proof (network required)
+test-integration-spruce:
+    node test/integration/spruce/verify.mjs
+
 # === CODE QUALITY ===
 
 # Format source code
