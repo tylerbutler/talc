@@ -11,6 +11,8 @@ Ensure you have the following installed:
 | Erlang/OTP | 27.2.1+ | BEAM runtime |
 | Gleam | 1.16.0+ | Compiler and tooling |
 | just | 1.38.0+ | Task runner |
+| Node.js | 22 (CI version) | JavaScript integration checks |
+| npm | Bundled with Node.js | Install integration dependencies and run `npm pack` |
 
 **Recommended:** Use [mise](https://mise.jdx.dev/) or [asdf](https://asdf-vm.com/) with the provided `.tool-versions` file.
 
@@ -21,6 +23,10 @@ mise install
 # With asdf
 asdf install
 ```
+
+Install Node.js and npm separately and make both available on `PATH`.
+They are not listed in `.tool-versions`. `just ci` and `just pr` include
+the integration checks and require both tools.
 
 ## Getting Started
 
@@ -159,7 +165,7 @@ pub fn parse(input: String) -> Result(Value, ParseError)
 # Run all unit tests
 just test
 
-# Run fixture-based integration test (requires npm)
+# Run fixture-based integration test (requires Node.js and npm)
 just test-integration
 ```
 
