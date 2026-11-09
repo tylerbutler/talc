@@ -1,0 +1,5 @@
+kind: Fixed
+body: |
+  Reject unsafe and obsolete package output before writes.
+  talc rejects unsafe portable paths, output symlinks, multiply linked files, and obsolete generated artifacts without deleting user files. Use fresh output after removing modules, dependencies, or selected assets. Malformed present configuration and licence metadata produce errors, and check retains interface failure details. Copy LICENSE-MIT and LICENSE-APACHE unchanged alongside LICENSE; multiple licences require an explicit npm license override rather than inferred OR/AND terms.
+time: 2026-11-09T12:40:00-08:00

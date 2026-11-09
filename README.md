@@ -162,6 +162,41 @@ peer_dependencies =
   react = >=18
 ```
 
+#### Output safety and repeat generation
+
+Use a non-empty relative output path with forward slashes, such as `npm_dist`
+or `packages/npm`. talc rejects project-root aliases, absolute paths, Windows
+drive/UNC forms, backslashes, `..` components, NUL characters, and components
+ending in a dot or space (except `.`). It rejects symlinks in output paths and
+output trees, including links inside the project, and multiply linked files.
+Build artifacts and selected assets must also use ordinary files/directories.
+These checks do not protect against another process replacing paths during a
+write and do not establish Windows runtime support.
+
+You can generate into unchanged output again. If removed modules, dependencies,
+or selected assets leave obsolete files, talc stops before writing and asks you
+to choose a fresh directory. It does not delete files. Move user files yourself;
+an extra `.mjs`, `.js`, `.d.mts`, or `.d.ts` file can also trigger this refusal.
+`pack` and `publish` do not invoke npm if generation fails.
+
+#### Licences and input errors
+
+talc copies `README.md`, `LICENSE`, `LICENSE-MIT`, and `LICENSE-APACHE` from the
+project root without changing their bytes. Missing files are valid. Failures to
+inspect or copy present assets are errors.
+
+A single entry in `gleam.toml` `licences` supplies npm `license` metadata.
+Multiple entries require an explicit `license` field under `package.json` in
+`talc.ccl`. Set the project's intended SPDX expression or npm-supported
+`SEE LICENSE IN <filename>` reference. talc does not infer OR/AND terms or
+change explicit overrides.
+
+Missing optional configuration retains its defaults. Present package options
+and peer dependency values must have the expected types; malformed values and
+non-string `licences` entries are errors. `check` reports the specific reason
+when it cannot load the package interface. It remains a metadata/configuration
+report and does not check runtime behavior or TypeScript consumers.
+
 #### Registry Behaviour
 
 - `package.registry` emits a `publishConfig.registry` field in the generated `package.json`.
