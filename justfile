@@ -62,6 +62,7 @@ test-integration:
 
     echo "→ Running Node verifier..."
     node test/integration/verify-package.mjs
+    node test/integration/verify-boundaries.mjs
 
     echo "→ Verifying npm pack..."
     (cd "$FIXTURE/npm_dist" && npm pack --dry-run --quiet)

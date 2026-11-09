@@ -204,7 +204,7 @@ fn run_generate(
       effective_talc,
       module_names,
     ),
-    generation_error_to_string,
+    package_json.error_to_string,
   )
 
   // Write output
@@ -337,17 +337,6 @@ fn gleam_config_error_to_string(error: gleam_toml.ConfigError) -> String {
       "gleam.toml missing required field: " <> field
     gleam_toml.InvalidField(field, expected) ->
       "gleam.toml " <> field <> " must be " <> expected
-  }
-}
-
-fn generation_error_to_string(error: package_json.GenerationError) -> String {
-  case error {
-    package_json.MissingRootModule(module) ->
-      "Package root module not found in JavaScript build output: " <> module
-    package_json.InteropExportConflict(module) ->
-      "Public module "
-      <> module
-      <> " conflicts with the reserved './gleam' interop export. Rename the module or override package.json.exports in talc.ccl."
   }
 }
 

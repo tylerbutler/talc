@@ -269,7 +269,7 @@ fn prepare_destination(path: String) -> Result(Nil, OutputError) {
 
 const artifact_extensions = [".mjs", ".js", ".d.mts", ".d.ts"]
 
-const optional_assets = ["README.md", "LICENSE"]
+const optional_assets = ["README.md", "LICENSE", "LICENSE-MIT", "LICENSE-APACHE"]
 
 fn is_package_artifact(path: String) -> Bool {
   list.any(artifact_extensions, fn(ext) { string.ends_with(path, ext) })

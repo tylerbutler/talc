@@ -1,2 +1,5 @@
 package =
   output_dir = npm_dist
+
+package.json =
+  license = SEE LICENSE IN LICENSE

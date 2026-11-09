@@ -52,6 +52,22 @@ pub type GenerationError {
   MissingRootModule(String)
   /// A public module would overwrite the compiler's `./gleam` export.
   InteropExportConflict(String)
+  /// Multiple licences do not define whether their terms use OR or AND.
+  AmbiguousLicences
+}
+
+/// Formats package metadata errors without discarding the cause.
+pub fn error_to_string(error: GenerationError) -> String {
+  case error {
+    MissingRootModule(module) ->
+      "Package root module not found in JavaScript build output: " <> module
+    InteropExportConflict(module) ->
+      "Public module "
+      <> module
+      <> " conflicts with the reserved './gleam' interop export. Rename the module or override package.json.exports in talc.ccl."
+    AmbiguousLicences ->
+      "Multiple gleam.toml licences require an explicit package.json license override in talc.ccl. Specify the project's intended SPDX expression or npm license reference; talc does not infer OR/AND terms."
+  }
 }
 
 /// Returns True when `talc_config.extra_fields` overrides every field that
@@ -84,6 +100,16 @@ pub fn generate_with_modules(
   talc_config: TalcConfig,
   module_names: List(String),
 ) -> Result(String, GenerationError) {
+  use _ <- result.try(case gleam_config.licences {
+    [_, _, ..] ->
+      case
+        list.any(talc_config.extra_fields, fn(pair) { pair.0 == "license" })
+      {
+        True -> Ok(Nil)
+        False -> Error(AmbiguousLicences)
+      }
+    _ -> Ok(Nil)
+  })
   let interop_module = gleam_config.name <> "/gleam"
   let overrides_exports =
     list.any(talc_config.extra_fields, fn(pair) { pair.0 == "exports" })
@@ -123,8 +149,8 @@ pub fn generate_with_modules(
     }
 
     let license_fields = case gleam_config.licences {
-      [first, ..] -> [#("license", json.string(first))]
-      [] -> []
+      [license] -> [#("license", json.string(license))]
+      _ -> []
     }
 
     let esm_fields = build_esm_fields(gleam_config.name, module_names)
@@ -351,6 +377,7 @@ pub fn check_report_with_modules(
       "Validation failed:\n"
       <> string.join(list.map(errors, fn(e) { "  ✗ " <> e }), "\n")
     }
-    _, Error(_) -> "Failed to generate package.json"
+    _, Error(error) ->
+      "Failed to generate package.json: " <> error_to_string(error)
   }
 }
