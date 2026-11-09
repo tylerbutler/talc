@@ -20,9 +20,9 @@ typescript_declarations = true
 
 ## Requirements
 
-- **Gleam** >= 1.7.0
+- **Gleam** >= 1.16.0 so the JavaScript build includes external type declarations
 - **Erlang/OTP** to run talc on the BEAM
-- **Node.js and npm** for `pack` and `publish`
+- **Node.js and npm** available on `PATH` for `pack` and `publish`
 - **JavaScript build output** from `gleam build --target javascript`
 
 ## Optional configuration
@@ -45,3 +45,9 @@ package.json =
 peer_dependencies =
   react = >=18
 ```
+
+`package.output_dir` defaults to `npm_dist`. Use a non-empty path relative to
+the project root, with no `..` components. These checks are lexical; they do
+not guarantee containment through symlinks. `generate`, `pack`, and `publish`
+also accept `--output-dir` to override this setting. See the
+[Quick Start](/quick-start/#7-pack-or-publish) for examples.

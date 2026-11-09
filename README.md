@@ -33,6 +33,14 @@ From a Gleam project root with JavaScript declarations enabled:
 typescript_declarations = true
 ```
 
+The default root entrypoint requires a public module whose name matches
+`name` in `gleam.toml`. For example, `name = "mylib"` requires
+`src/mylib.gleam`, which must not be internal. If you use a different root
+module, override all four `package.json` fields in `talc.ccl`: `exports`,
+`main`, `module`, and `types`. Overriding only `exports` is not sufficient.
+
+Node.js and npm must be available on `PATH` for `pack` and `publish`.
+
 Build the project for JavaScript before running talc:
 
 ```sh
@@ -57,9 +65,20 @@ gleam run -m talc -- publish --tag=beta                  # publish under a dist-
 gleam run -m talc -- publish --access=public             # set access level
 gleam run -m talc -- publish --provenance=true           # provenance attestation (CI only)
 
-# Use a custom output directory
+# Use a custom output directory for generate, pack, or publish
 gleam run -m talc -- generate --output-dir my_output
+gleam run -m talc -- pack --output-dir my_output
+gleam run -m talc -- publish --output-dir my_output
 ```
+
+`--output-dir` overrides `package.output_dir` in `talc.ccl`; the default is
+`npm_dist`. Use a non-empty path relative to the project root, with no `..`
+components (for example, `packages/npm`, not `../npm` or `packages/../npm`).
+These checks are lexical; they do not guarantee containment through symlinks.
+
+For `publish`, `--access` accepts only `public` or `restricted`. `--tag` must
+be non-empty and contain only ASCII letters, numbers, `_`, `-`, or `.`.
+These are talc's checks; npm can apply additional restrictions.
 
 ### Output Structure
 
